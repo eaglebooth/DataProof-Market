@@ -2,6 +2,7 @@
 .env.local
 .env.production
 .next/
+.vercel/
 node_modules/
 coverage/
 dist/
@@ -10,4 +11,3 @@ __pycache__/
 *.py[cod]
 docs/live-evidence/*.json
 !docs/live-evidence/README.md
-

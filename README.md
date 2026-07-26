@@ -37,10 +37,11 @@ Recovery:
 
 ## Current status
 
-`STUDIONET_VERIFIED`. Contract
+`SUBMISSION_READY`. Contract
 `0x4AD7AaDf9e75563702B849866f55b524dA7420c1` passed the two-wallet funded
-lifecycle and adversarial runtime checks. Production hosting remains blocked
-until the frontend is reviewed and deployment is explicitly approved.
+lifecycle and adversarial runtime checks. The production frontend is live at
+<https://dataproof-market.vercel.app> and was verified against the same
+Studionet deployment.
 
 ## Local verification
 
@@ -56,6 +57,11 @@ npm run dev
 The local app runs at `http://localhost:3045` in this workspace. The local
 environment points to the verified deployment; reviewers may also select an
 exact Studionet deployment at runtime on `/contract`.
+
+Production app: <https://dataproof-market.vercel.app>
+
+Contract Explorer:
+<https://explorer-studio.genlayer.com/address/0x4AD7AaDf9e75563702B849866f55b524dA7420c1>
 
 ## Live verification after deployment
 

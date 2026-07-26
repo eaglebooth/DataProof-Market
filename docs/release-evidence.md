@@ -14,11 +14,11 @@ as passed.
 | Value proof | PASS | Contract received `2000` wei, refunded `1000` wei, paid provider `1000` wei, and retained `0` active escrow |
 | Consensus | PASS | Jury produced both `REJECT` and `ACCEPT` semantic verdicts on immutable web evidence |
 | Address audit | PASS | Frontend `/contract` read live state from the same submitted Studionet address |
-| Production | BLOCKED | Local frontend only |
+| Production | PASS | `https://dataproof-market.vercel.app` reads the submitted Studionet deployment and its two live records |
 | Provenance | PASS | Case-bound submitter, immutable URLs, and SHA-256 digests are stored |
 | Limitations | PASS | Large dataset bytes are not fetched; only bounded immutable artifacts are evaluated |
 
-Release status: `STUDIONET_VERIFIED`.
+Release status: `SUBMISSION_READY`.
 
 Behavioral model tests do not prove GenLayer runtime behavior. A release may be
 called submission-ready only after both live scripts run against the exact
