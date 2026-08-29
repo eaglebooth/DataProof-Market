@@ -14,12 +14,12 @@ import { Bounty, EMPTY_STATE, MarketState } from "@/lib/types";
 export default function MarketPage() {
   const [state, setState] = useState<MarketState>(EMPTY_STATE);
   const [bounties, setBounties] = useState<Bounty[]>([]);
-  const [message, setMessage] = useState("Connect a deployed contract to load the live market.");
+  const [message, setMessage] = useState("Loading the canonical Studionet market.");
   const [loading, setLoading] = useState(false);
 
   const sync = useCallback(async () => {
     if (!configuredAddress()) {
-      setMessage("Awaiting a deployed DataProof Market contract.");
+      setMessage("The canonical Studionet contract is unavailable.");
       return;
     }
     setLoading(true);

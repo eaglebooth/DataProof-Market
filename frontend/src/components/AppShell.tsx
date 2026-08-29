@@ -1,6 +1,7 @@
 "use client";
 
-import { Database, FlaskConical, Menu, WalletCards, X } from "lucide-react";
+import { FlaskConical, Menu, WalletCards, X } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -37,7 +38,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app">
       <header className="topbar">
         <Link className="brand" href="/">
-          <span className="brand-mark"><Database size={19} /></span>
+          <span className="brand-mark">
+            <Image className="brand-logo" src="/dataproof-logo.png" alt="" width={38} height={38} priority />
+          </span>
           <span>DataProof</span>
           <small>MARKET</small>
         </Link>
@@ -66,7 +69,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <main>{children}</main>
       <footer>
-        <div className="brand footer-brand"><span className="brand-mark"><Database size={18} /></span><span>DataProof</span></div>
+        <div className="brand footer-brand">
+          <span className="brand-mark"><Image className="brand-logo" src="/dataproof-logo.png" alt="" width={38} height={38} /></span>
+          <span>DataProof</span>
+        </div>
         <p>Immutable evidence. Semantic jury. Conserved escrow.</p>
         <Link href="/protocol">Read the protocol</Link>
       </footer>

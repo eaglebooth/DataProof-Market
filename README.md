@@ -33,7 +33,7 @@ Recovery:
 - `/bounties/new`: one payable primary action to open a funded request
 - `/bounties/:id`: state-driven workspace that exposes only the next valid action
 - `/protocol`: jury limits, payout bands, and recovery rules
-- `/contract`: runtime contract selection, live state verification, and Explorer link
+- `/contract`: canonical deployment, live state verification, and Explorer link
 
 ## Current status
 
@@ -54,9 +54,11 @@ npm run build
 npm run dev
 ```
 
-The local app runs at `http://localhost:3045` in this workspace. The local
-environment points to the verified deployment; reviewers may also select an
-exact Studionet deployment at runtime on `/contract`.
+The local app runs at `http://localhost:3045` in this workspace. The public
+frontend is hard-locked to Studionet and the canonical deployment; neither
+browser storage nor Vercel environment variables can redirect it. Copy
+`frontend/.env.example` to `frontend/.env.local` only when an explicit
+Studionet RPC endpoint is required.
 
 Production app: <https://dataproof-market.vercel.app>
 
@@ -80,11 +82,10 @@ the selected deployed contract.
 
 ## Dependency note
 
-The application pins the current `genlayer-js` release. Its published package
-currently includes an ESLint dependency chain with a `brace-expansion` advisory
-and no compatible upstream fix. PostCSS and Sharp are overridden to patched
-versions. `npm run lint` and `npm run build` pass; forced audit rewrites are not
-used because they break the GenLayer SDK toolchain.
+The application pins `genlayer-js` 1.1.8. Vulnerable transitive development
+packages are patched in the lockfile without changing the SDK version. Both the
+full dependency audit and the production-only audit currently report zero known
+vulnerabilities.
 
 Official references:
 

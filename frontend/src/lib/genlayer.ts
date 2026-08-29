@@ -1,8 +1,8 @@
 import { createClient } from "genlayer-js";
-import { localnet, studionet, testnetBradbury } from "genlayer-js/chains";
+import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
-type NetworkName = "localnet" | "studionet" | "testnetBradbury";
+type NetworkName = "studionet";
 
 declare global {
   interface Window {
@@ -12,11 +12,11 @@ declare global {
   }
 }
 
-const network = (process.env.NEXT_PUBLIC_NETWORK as NetworkName) || "studionet";
+const network: NetworkName = "studionet";
 const endpoint = process.env.NEXT_PUBLIC_GENLAYER_RPC;
-const chainMap = { localnet, studionet, testnetBradbury };
+export const canonicalContractAddress = "0x4AD7AaDf9e75563702B849866f55b524dA7420c1";
 const readClient = createClient({
-  chain: chainMap[network] ?? studionet,
+  chain: studionet,
   ...(endpoint ? { endpoint } : {}),
 });
 
@@ -51,19 +51,7 @@ export type ContractResult = {
 };
 
 export function configuredAddress() {
-  if (typeof window !== "undefined") {
-    const override = window.localStorage.getItem("dataproof-market.contract");
-    if (override) return override;
-  }
-  return process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
-}
-
-export function setConfiguredAddress(address: string) {
-  window.localStorage.setItem("dataproof-market.contract", address);
-}
-
-export function restoreConfiguredAddress() {
-  window.localStorage.removeItem("dataproof-market.contract");
+  return canonicalContractAddress;
 }
 
 export async function connectWallet(): Promise<ContractResult> {
@@ -120,7 +108,7 @@ export async function writeContract(
     })) as string[];
     if (!accounts[0]) return { success: false, error: "No wallet account selected." };
     runtime = createClient({
-      chain: chainMap[network] ?? studionet,
+      chain: studionet,
       ...(endpoint ? { endpoint } : {}),
       provider: window.ethereum,
       account: accounts[0] as `0x${string}`,
