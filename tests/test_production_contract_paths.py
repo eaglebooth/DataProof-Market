@@ -297,6 +297,22 @@ class ProductionContractPathTests(unittest.TestCase):
         gl.nondet.exec_prompt = lambda _prompt: json.dumps({"outcome": "NO_QUALIFIED_DATASET", "winner_id": 0, "runner_up_id": 1, "reason": "Contradictory result."})
         self.assertEqual(contract.judge_tournament(tid), "EVIDENCE_UNAVAILABLE")
 
+    def test_fenced_consensus_json_is_safely_parsed_and_validated(self):
+        contract, gl, store, _ = load_production_harness()
+        tid = open_and_commit(contract, gl, 1_000, 100)
+        reveal_all(contract, gl, store, tid)
+        gl.nondet.exec_prompt = lambda _prompt: '```json\n{"outcome":"RANKED","winner_id":0,"runner_up_id":1,"reason":"Candidate zero best satisfies the rubric."}\n```'
+        self.assertEqual(contract.judge_tournament(tid), "RULING_READY")
+        ruling = json.loads(contract.tournament_data[tid])
+        self.assertEqual((ruling["winner"], ruling["runner_up"]), (0, 1))
+
+    def test_malformed_consensus_text_fails_closed(self):
+        contract, gl, store, _ = load_production_harness()
+        tid = open_and_commit(contract, gl, 1_000, 100)
+        reveal_all(contract, gl, store, tid)
+        gl.nondet.exec_prompt = lambda _prompt: "winner is probably candidate zero"
+        self.assertEqual(contract.judge_tournament(tid), "EVIDENCE_UNAVAILABLE")
+
     def test_withdraw_is_checks_effects_interactions_and_not_replayable(self):
         contract, gl, _, transfers = load_production_harness()
         contract.credits[PROVIDER_A] = 777

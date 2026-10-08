@@ -6,6 +6,8 @@
 - Added exact packet digest consensus before comparative semantic ranking.
 - Separated raw-byte `web.get` integrity checks from `web.render` semantic input
   after Studionet proved rendered JSON is not byte-identical to its source.
+- Hardened comparative-output parsing for fenced/wrapped JSON while retaining
+  closed outcomes and strict eligible winner/runner validation.
 - Added bounded candidate storage, hallucinated-winner rejection, deterministic
   prize/bond accounting, no-reveal forfeiture, and CEI-safe pull withdrawals.
 - Added exhaustive lifecycle-model coverage for every 2–5 provider reveal outcome.

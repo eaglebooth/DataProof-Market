@@ -87,6 +87,17 @@ class DataProofMarket(gl.Contract):
         self.credits[address] = self.credits.get(address, u256(0)) + value
         self.total_credited = self.total_credited + value
 
+    def _parse_ranking(self, raw) -> dict:
+        if isinstance(raw, dict): return raw
+        text = str(raw).strip()
+        start = text.find("{"); end = text.rfind("}")
+        if start < 0 or end <= start: return {"outcome": "UNAVAILABLE"}
+        try:
+            value = json.loads(text[start:end + 1])
+            return value if isinstance(value, dict) else {"outcome": "UNAVAILABLE"}
+        except Exception:
+            return {"outcome": "UNAVAILABLE"}
+
     @gl.public.write.payable
     def open_tournament(self, title: str, use_case: str, rubric_url: str, rubric_digest: str, provider_bond: u256, max_candidates: u256) -> u256:
         prize = gl.message.value
@@ -201,7 +212,7 @@ class DataProofMarket(gl.Contract):
                 return gl.nondet.exec_prompt("Rank datasets for: " + t["use_case"] + "\nRUBRIC:\n" + rubric[:2600] + "\n" + "\n".join(blocks) + '\nReturn ONLY {"outcome":"RANKED|NO_QUALIFIED_DATASET|UNAVAILABLE","winner_id":0,"runner_up_id":-1,"reason":"under 700 chars"}. Never invent ids.')
             except Exception: return '{"outcome":"UNAVAILABLE","winner_id":-1,"runner_up_id":-1,"reason":"Evidence unavailable"}'
         principle = "Equivalent only if outcome, winner id, and runner-up id match. Reason wording may differ. Never accept ids outside the eligible candidates."
-        try: data = json.loads(gl.eq_principle.prompt_comparative(evaluate, principle))
+        try: data = self._parse_ranking(gl.eq_principle.prompt_comparative(evaluate, principle))
         except Exception: data = {"outcome": "UNAVAILABLE"}
         outcome = str(data.get("outcome", "UNAVAILABLE")).upper()
         try:

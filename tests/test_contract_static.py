@@ -37,6 +37,11 @@ class ContractStaticTests(unittest.TestCase):
         self.assertNotIn("amount", prompt.lower())
         self.assertNotIn("prize", prompt.lower())
 
+    def test_ranking_parser_accepts_wrappers_but_keeps_closed_validation(self):
+        self.assertIn('text.find("{")', SOURCE)
+        self.assertIn('text.rfind("}")', SOURCE)
+        self.assertIn("valid_rank", SOURCE)
+
     def test_public_abi_stays_bounded(self):
         for node in ast.walk(TREE):
             if not isinstance(node, ast.FunctionDef): continue
