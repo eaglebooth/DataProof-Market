@@ -32,13 +32,16 @@ export async function write(client, address, functionName, args = [], value = 0n
     fullTransaction: false,
   });
   const transaction = receipt.txExecutionResultName ? receipt : await client.getTransaction({ hash });
-  return {
+  const result = {
     functionName,
     hash,
     status: transaction.statusName || receipt.statusName,
     execution: transaction.txExecutionResultName || receipt.txExecutionResultName || "NOT_EXPOSED_BY_SDK",
     returned: transaction.txDataDecoded,
   };
+  assert(["ACCEPTED", "FINALIZED"].includes(result.status), `${functionName} did not reach a terminal accepted state`, result);
+  assert(["SUCCESS", "SUCCEEDED", "ACCEPTED", "NOT_EXPOSED_BY_SDK"].includes(result.execution), `${functionName} execution failed`, result);
+  return result;
 }
 
 export async function attempt(operation) {

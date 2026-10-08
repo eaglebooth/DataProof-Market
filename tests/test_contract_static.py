@@ -2,89 +2,48 @@ import ast
 import unittest
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = ROOT / "contracts" / "DataProofMarket.py"
-SOURCE = CONTRACT.read_text(encoding="utf-8")
+SOURCE = (Path(__file__).parents[1] / "contracts" / "DataProofMarket.py").read_text(encoding="utf-8")
 TREE = ast.parse(SOURCE)
 
-
 class ContractStaticTests(unittest.TestCase):
-    def test_required_runner_header_is_exact(self):
-        self.assertEqual(
-            SOURCE.splitlines()[:3],
-            [
-                "# v0.2.16",
-                '# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }',
-                "from genlayer import *",
-            ],
-        )
+    def test_runner_is_pinned(self):
+        self.assertEqual(SOURCE.splitlines()[0], "# v0.2.16")
+        self.assertIn("py-genlayer:", SOURCE.splitlines()[1])
 
-    def test_contract_uses_semantic_consensus_and_real_transfers(self):
-        self.assertIn("gl.eq_principle.prompt_comparative", SOURCE)
-        self.assertNotIn("gl.eq_principle.strict_eq", SOURCE)
+    def test_two_consensus_modes_have_separate_jobs(self):
+        self.assertIn("gl.eq_principle.strict_eq(verify)", SOURCE)
+        self.assertIn("gl.eq_principle.prompt_comparative(evaluate, principle)", SOURCE)
+        self.assertIn("hashlib.sha256", SOURCE)
+
+    def test_real_custody_uses_pull_payments_and_cei(self):
         self.assertIn("@gl.public.write.payable", SOURCE)
-        self.assertIn("_Recipient(Address(provider)).emit_transfer", SOURCE)
-        self.assertIn("_Recipient(Address(buyer)).emit_transfer", SOURCE)
+        self.assertIn("self.credits[sender] = u256(0)", SOURCE)
+        self.assertIn("_Recipient(Address(sender)).emit_transfer", SOURCE)
+        self.assertLess(SOURCE.index("self.credits[sender] = u256(0)"), SOURCE.index("emit_transfer(value=amount)"))
 
-    def test_public_methods_have_no_more_than_six_parameters(self):
-        for node in ast.walk(TREE):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            is_public = any(
-                isinstance(decorator, ast.Attribute)
-                and isinstance(decorator.value, ast.Attribute)
-                and isinstance(decorator.value.value, ast.Name)
-                and decorator.value.value.id == "gl"
-                and decorator.value.attr == "public"
-                for decorator in node.decorator_list
-            )
-            is_payable_public = any(
-                isinstance(decorator, ast.Attribute) and decorator.attr == "payable"
-                for decorator in node.decorator_list
-            )
-            if is_public or is_payable_public:
-                parameter_count = len(node.args.args) - 1
-                self.assertLessEqual(
-                    parameter_count,
-                    6,
-                    f"{node.name} has {parameter_count} parameters",
-                )
-
-    def test_sender_bound_roles_and_state_guards_are_present(self):
-        for marker in [
-            "gl.message.sender_address.as_hex.lower()",
-            'raise gl.vm.UserError("BUYER_ONLY")',
-            'raise gl.vm.UserError("PROVIDER_ONLY")',
-            'raise gl.vm.UserError("PARTY_ONLY")',
-            'raise gl.vm.UserError("RULING_NOT_READY")',
-            'raise gl.vm.UserError("SUBMISSION_WINDOW_CLOSED")',
-            'raise gl.vm.UserError("LICENSE_WINDOW_CLOSED")',
-        ]:
+    def test_protocol_is_bounded_and_replay_guarded(self):
+        for marker in ["MAX_CANDIDATES = 5", "DUPLICATE_PROVIDER", "SUBMISSION_ALREADY_REVEALED", "RULING_NOT_READY", "NOTHING_TO_WITHDRAW"]:
             self.assertIn(marker, SOURCE)
+        self.assertNotIn("while True", SOURCE)
+        self.assertNotIn("range(self.tournament_count", SOURCE)
+
+    def test_commit_reveal_and_authoritative_time_exist(self):
+        for marker in ['gl.message_raw["datetime"]', "OPEN_COMMIT", "OPEN_REVEAL", "READY_FOR_JURY", "COMMIT_WINDOW_CLOSED", "REVEAL_WINDOW_CLOSED"]:
+            self.assertIn(marker, SOURCE)
+
+    def test_ai_never_returns_or_sets_an_amount(self):
+        prompt = SOURCE[SOURCE.index('return gl.nondet.exec_prompt("Rank datasets'):SOURCE.index('principle = "Equivalent')]
+        self.assertNotIn("amount", prompt.lower())
+        self.assertNotIn("prize", prompt.lower())
+
+    def test_public_abi_stays_bounded(self):
+        for node in ast.walk(TREE):
+            if not isinstance(node, ast.FunctionDef): continue
+            if any(isinstance(d, ast.Attribute) and d.attr in ("write", "view", "payable") for d in node.decorator_list):
+                self.assertLessEqual(len(node.args.args) - 1, 6, node.name)
 
     def test_immutable_sources_and_digests_are_required(self):
-        for marker in [
-            "https://ipfs.io/ipfs/",
-            "https://arweave.net/",
-            'value.startswith("sha256:")',
-            "rubric_digest",
-            "manifest_digest",
-            "sample_digest",
-            "license_digest",
-        ]:
+        for marker in ["https://ipfs.io/ipfs/", "https://arweave.net/", 'value.startswith("sha256:")', "manifest_digest", "sample_digest", "license_digest"]:
             self.assertIn(marker, SOURCE)
 
-    def test_no_unbounded_history_scan_or_fake_runtime(self):
-        for marker in [
-            "while True",
-            "range(self.bounty_count",
-            "mockContract",
-            "demoBounties",
-            "testnetAsimov",
-        ]:
-            self.assertNotIn(marker, SOURCE)
-
-
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

@@ -1,9 +1,15 @@
 # DataProof Market
 
+> **v2 deploy candidate:** the repository contract now implements sealed,
+> multi-provider dataset tournaments. The production URL and current Studionet
+> address remain on verified v1 until the new storage/ABI is redeployed and its
+> funded lifecycle is proven.
+
 DataProof Market is a GenLayer-native funded marketplace for procuring useful,
 well-documented, license-compatible datasets. Buyers lock real GEN against an
 immutable rubric; providers submit immutable dataset evidence; a neutral on-chain
-AI jury chooses a full payout, locked partial payout, or refund.
+AI jury ranks only digest-verified candidates while the contract deterministically
+assigns the fixed prize and provider bonds.
 
 ## Why GenLayer
 
@@ -21,11 +27,14 @@ The judgment affects real escrow and neither buyer nor provider should control i
 
 ## Lifecycle
 
-`OPEN -> PACKET_STARTED -> SUBMITTED -> RULING_READY -> PAID_FULL | PAID_PARTIAL | REFUNDED`
+`OPEN_COMMIT -> OPEN_REVEAL -> READY_FOR_JURY -> RULING_READY -> SETTLED`
 
 Recovery:
 
-`SUBMITTED -> EVIDENCE_UNAVAILABLE -> REFUNDED` after both parties approve.
+`READY_FOR_JURY -> EVIDENCE_UNAVAILABLE -> SETTLED` after buyer + provider
+approval, or after the recovery deadline. Provider deposits are reveal/liveness
+bonds: fetch outages and mismatches cannot confiscate them or veto eligible rivals;
+only no-reveal forfeits a bond.
 
 ## Application routes
 
@@ -67,18 +76,18 @@ Contract Explorer:
 
 ## Live verification after deployment
 
-Set `CONTRACT_ADDRESS`, `BUYER_PRIVATE_KEY`, `PROVIDER_PRIVATE_KEY`, and immutable
+After the v2 contract is deployed, set `CONTRACT_ADDRESS`, `BUYER_PRIVATE_KEY`,
+`PROVIDER_A_PRIVATE_KEY`, `PROVIDER_B_PRIVATE_KEY`, and immutable
 IPFS/Arweave URL plus SHA-256 digest pairs for the rubric, manifest, sample, and
 license. Then run from `frontend/`:
 
 ```bash
 npm run test:live
-npm run test:adversarial
 ```
 
-These scripts verify accepted receipts, state changes, sender-bound permissions,
-duplicate-call rejection, exact-value funding, and payout conservation against
-the selected deployed contract.
+The v2 script verifies a three-wallet tournament, sealed commitments, reveals,
+comparative adjudication or cooperative recovery, settlement, and exact custody
+conservation. Historical v1 scripts remain explicitly suffixed `:v1`.
 
 ## Dependency note
 

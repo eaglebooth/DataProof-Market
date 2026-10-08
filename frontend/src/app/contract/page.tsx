@@ -22,7 +22,7 @@ export default function ContractPage() {
     try {
       const state = parseJsonResult<MarketState>(result.data);
       setTone("success");
-      setNotice(`Live DataProof state received: ${state.bounty_count} requests, ${state.active_escrow} wei active escrow.`);
+      setNotice(`Live DataProof state received: ${state.tournament_count} tournaments, ${state.active_prizes} wei in prizes and ${state.active_bonds} wei in bonds.`);
     } catch (error) {
       setTone("error");
       setNotice(error instanceof Error ? error.message : "Unreadable state response.");

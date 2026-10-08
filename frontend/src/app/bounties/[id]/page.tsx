@@ -1,236 +1,104 @@
 "use client";
 
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  ExternalLink,
-  FileArchive,
-  Fingerprint,
-  Scale,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, Scale, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Notice } from "@/components/Notice";
 import { StatusPill } from "@/components/StatusPill";
-import { readContract, writeContract } from "@/lib/genlayer";
-import { compactDigest, parseJsonResult, shortAddress } from "@/lib/format";
-import { Bounty } from "@/lib/types";
+import { connectWallet, readContract, writeContract } from "@/lib/genlayer";
+import { parseJsonResult, shortAddress } from "@/lib/format";
+import type { Submission, Tournament } from "@/lib/types";
 
-const terminal = new Set(["PAID_FULL", "PAID_PARTIAL", "REFUNDED", "CANCELLED"]);
-
-export default function BountyPage() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
-  const [bounty, setBounty] = useState<Bounty | null>(null);
+export default function TournamentPage() {
+  const { id } = useParams<{ id: string }>();
+  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [entries, setEntries] = useState<Submission[]>([]);
+  const [wallet, setWallet] = useState("");
+  const [myEntry, setMyEntry] = useState<Submission | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ tone: "info" | "error" | "success"; text: string }>({
-    tone: "info",
-    text: "Reading the selected on-chain record.",
-  });
-  const [core, setCore] = useState({ manifestUrl: "", manifestDigest: "", sampleUrl: "", sampleDigest: "", note: "" });
-  const [license, setLicense] = useState({ url: "", digest: "" });
+  const [now, setNow] = useState(0);
+  const [message, setMessage] = useState("Reading tournament.");
+  const [commit, setCommit] = useState({ manifest: "", sample: "", license: "" });
+  const [reveal, setReveal] = useState({ manifest: "", sample: "", license: "", note: "" });
 
-  const sync = useCallback(async () => {
-    const result = await readContract("get_bounty", [BigInt(id)]);
-    if (!result.success) {
-      setNotice({ tone: "error", text: result.error || "Unable to read this request." });
-      return null;
+  const sync = useCallback(async (account = wallet) => {
+    const result = await readContract("get_tournament", [BigInt(id)]);
+    if (!result.success) { setMessage(result.error || "Read failed."); return null; }
+    const next = parseJsonResult<Tournament>(result.data);
+    setTournament(next);
+    const rows = await Promise.all(Array.from({ length: next.candidates }, (_, slot) => readContract("get_tournament_submission", [BigInt(id), BigInt(slot)])));
+    setEntries(rows.filter((row) => row.success).map((row) => parseJsonResult<Submission>(row.data)));
+    if (account) {
+      const own = await readContract("get_provider_submission", [BigInt(id), account]);
+      const parsed = own.success ? parseJsonResult<Partial<Submission>>(own.data) : {};
+      setMyEntry(typeof parsed.id === "number" ? parsed as Submission : null);
     }
-    try {
-      const next = parseJsonResult<Bounty>(result.data);
-      if (!next.title) throw new Error("Bounty not found.");
-      setBounty(next);
-      setNotice({ tone: "success", text: `Live state verified: ${next.status.replaceAll("_", " ")}.` });
-      return next;
-    } catch (error) {
-      setNotice({ tone: "error", text: error instanceof Error ? error.message : "Unreadable contract response." });
-      return null;
-    }
-  }, [id]);
+    setMessage(`Verified ${next.status} with ${next.candidates} sealed candidate(s).`);
+    return next;
+  }, [id, wallet]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void sync(), 0);
-    return () => window.clearTimeout(timer);
-  }, [sync]);
+  useEffect(() => { const timer = window.setTimeout(() => void sync(), 0); return () => window.clearTimeout(timer); }, [sync]);
+  useEffect(() => { const tick = () => setNow(Math.floor(Date.now() / 1000)); tick(); const timer = window.setInterval(tick, 1000); return () => window.clearInterval(timer); }, []);
 
-  async function transact(functionName: string, args: unknown[], expectedStatus: string | string[]) {
+  async function connect() {
+    const result = await connectWallet();
+    if (!result.success || typeof result.data !== "string") { setMessage(result.error || "Wallet connection failed."); return; }
+    const account = result.data.toLowerCase();
+    setWallet(account);
+    await sync(account);
+  }
+
+  async function transact(name: string, args: unknown[], expected: string | string[], value = BigInt(0), verifyEntry?: string) {
     setBusy(true);
-    const result = await writeContract(functionName, args);
-    if (!result.success) {
-      setNotice({ tone: "error", text: result.error || `${functionName} failed.` });
-      setBusy(false);
-      return;
-    }
-    const next = await sync();
-    const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-    if (!next || !expected.includes(next.status)) {
-      setNotice({
-        tone: "error",
-        text: `Transaction ${result.hash} reached ${result.status}, but the expected on-chain state was not verified.`,
-      });
-    } else {
-      setNotice({ tone: "success", text: `On-chain state change verified. Transaction: ${result.hash}` });
-    }
-    setBusy(false);
+    try {
+      const result = await writeContract(name, args, value);
+      if (!result.success) { setMessage(result.error || "Transaction failed."); return; }
+      const next = await sync(wallet);
+      const allowed = Array.isArray(expected) ? expected : [expected];
+      let entryVerified = true;
+      if (verifyEntry && wallet) {
+        const own = await readContract("get_provider_submission", [BigInt(id), wallet]);
+        const parsed = own.success ? parseJsonResult<Partial<Submission>>(own.data) : {};
+        entryVerified = parsed.status === verifyEntry;
+      }
+      setMessage(next && allowed.includes(next.status) && entryVerified ? `State and caller record verified. Transaction: ${result.hash}` : "Receipt completed, but the expected contract state was not proven.");
+    } finally { setBusy(false); }
   }
 
-  async function submitCore(event: FormEvent) {
-    event.preventDefault();
-    await transact(
-      "submit_dataset",
-      [BigInt(id), core.manifestUrl, core.manifestDigest, core.sampleUrl, core.sampleDigest, core.note],
-      "PACKET_STARTED",
-    );
+  async function commitEntry(event: FormEvent) { event.preventDefault(); if (tournament) await transact("commit_submission", [BigInt(id), commit.manifest, commit.sample, commit.license], "OPEN_COMMIT", BigInt(tournament.bond), "COMMITTED"); }
+  async function revealEntry(event: FormEvent) { event.preventDefault(); await transact("reveal_dataset", [BigInt(id), reveal.manifest, reveal.sample, reveal.license, reveal.note], "OPEN_REVEAL", BigInt(0), "REVEALED"); }
+  async function withdrawCredit() {
+    if (!wallet) { await connect(); return; }
+    setBusy(true);
+    try {
+      const before = await readContract("get_withdrawable", [wallet]);
+      if (!before.success || BigInt(String(before.data ?? "0")) === BigInt(0)) { setMessage("This wallet has no withdrawable credit."); return; }
+      const result = await writeContract("withdraw");
+      const after = result.success ? await readContract("get_withdrawable", [wallet]) : null;
+      setMessage(result.success && after?.success && BigInt(String(after.data ?? "0")) === BigInt(0) ? `Withdrawal verified. Transaction: ${result.hash}` : result.error || "Withdrawal state was not verified.");
+    } finally { setBusy(false); }
   }
 
-  async function attachLicense(event: FormEvent) {
-    event.preventDefault();
-    await transact("attach_license", [BigInt(id), license.url, license.digest], "SUBMITTED");
-  }
+  if (!tournament) return <section className="detail-page"><Notice>{message}</Notice></section>;
+  const isBuyer = wallet === tournament.buyer.toLowerCase();
+  const isProvider = Boolean(myEntry);
+  const canCommit = Boolean(wallet) && !isBuyer && !isProvider && now < tournament.commit_deadline && tournament.candidates < tournament.cap;
+  const canReveal = Boolean(wallet) && myEntry?.status === "COMMITTED" && now >= tournament.commit_deadline && now < tournament.reveal_deadline;
 
-  if (!bounty) {
-    return <section className="detail-page"><Notice tone={notice.tone}>{notice.text}</Notice></section>;
-  }
-
-  return (
-    <section className="detail-page">
-      <div className="detail-header">
-        <Link className="back-link" href="/"><ArrowLeft size={16} /> Market</Link>
-        <div className="detail-title">
-          <span className="row-id">REQUEST #{bounty.id.padStart(2, "0")}</span>
-          <h1>{bounty.title}</h1>
-          <StatusPill status={bounty.status} />
-        </div>
-        <p>{bounty.use_case}</p>
-      </div>
-
-      <div className="evidence-ledger">
-        <div>
-          <span>BUYER</span><strong>{shortAddress(bounty.buyer)}</strong>
-          <span>PROVIDER</span><strong>{shortAddress(bounty.provider)}</strong>
-        </div>
-        <div>
-          <span>FULL ESCROW</span><strong>{bounty.escrow} wei</strong>
-          <span>PARTIAL BAND</span><strong>{bounty.partial_reward} wei</strong>
-        </div>
-        <div>
-          <span>RUBRIC SNAPSHOT</span>
-          <a href={bounty.rubric_url} rel="noreferrer" target="_blank">Open source <ExternalLink size={13} /></a>
-          <code>{compactDigest(bounty.rubric_digest)}</code>
-        </div>
-      </div>
-
-      <Notice tone={notice.tone}>{notice.text}</Notice>
-
-      {bounty.status === "OPEN" && (
-        <div className="action-layout">
-          <div className="action-context">
-            <FileArchive />
-            <p className="eyebrow">PROVIDER ACTION · 1 OF 2</p>
-            <h2>Lock the dataset core.</h2>
-            <p>Submit only immutable manifest and sample snapshots. The contract will not accept mutable web pages.</p>
-          </div>
-          <form className="action-form" onSubmit={submitCore}>
-            <label>Manifest URL<input required value={core.manifestUrl} onChange={(e) => setCore({ ...core, manifestUrl: e.target.value })} placeholder="https://ipfs.io/ipfs/..." /></label>
-            <label>Manifest digest<input required value={core.manifestDigest} onChange={(e) => setCore({ ...core, manifestDigest: e.target.value })} placeholder="sha256:..." /></label>
-            <label>Sample URL<input required value={core.sampleUrl} onChange={(e) => setCore({ ...core, sampleUrl: e.target.value })} placeholder="https://arweave.net/..." /></label>
-            <label>Sample digest<input required value={core.sampleDigest} onChange={(e) => setCore({ ...core, sampleDigest: e.target.value })} placeholder="sha256:..." /></label>
-            <label>Provider note<textarea required value={core.note} onChange={(e) => setCore({ ...core, note: e.target.value })} placeholder="Explain coverage, collection method, schema, and known limitations." /></label>
-            <button className="button button-primary" disabled={busy} type="submit">{busy ? "Locking..." : "Lock manifest and sample"} <ArrowRight size={17} /></button>
-          </form>
-        </div>
-      )}
-
-      {bounty.status === "PACKET_STARTED" && (
-        <div className="action-layout">
-          <div className="action-context">
-            <Fingerprint />
-            <p className="eyebrow">PROVIDER ACTION · 2 OF 2</p>
-            <h2>Bind the license snapshot.</h2>
-            <p>The separately hashed license makes commercial compatibility inspectable before the jury runs.</p>
-          </div>
-          <form className="action-form" onSubmit={attachLicense}>
-            <label>License snapshot URL<input required value={license.url} onChange={(e) => setLicense({ ...license, url: e.target.value })} placeholder="https://ipfs.io/ipfs/..." /></label>
-            <label>License digest<input required value={license.digest} onChange={(e) => setLicense({ ...license, digest: e.target.value })} placeholder="sha256:..." /></label>
-            <button className="button button-primary" disabled={busy} type="submit">{busy ? "Binding..." : "Complete evidence packet"} <ArrowRight size={17} /></button>
-          </form>
-        </div>
-      )}
-
-      {bounty.status === "SUBMITTED" && (
-        <div className="decision-panel">
-          <Scale />
-          <p className="eyebrow">PARTY ACTION</p>
-          <h2>Ask validators to judge the packet.</h2>
-          <p>Either recorded party may start review. The comparative principle checks the substantive economic band, not byte-identical reasoning.</p>
-          <button className="button button-primary" disabled={busy} onClick={() => void transact("review_dataset", [BigInt(id)], ["RULING_READY", "EVIDENCE_UNAVAILABLE"])} type="button">
-            {busy ? "Waiting for consensus..." : "Run GenLayer jury"} <ArrowRight size={17} />
-          </button>
-        </div>
-      )}
-
-      {bounty.status === "RULING_READY" && (
-        <div className="verdict-panel">
-          <div><p className="eyebrow">JURY VERDICT</p><strong>{bounty.decision}</strong><span>{bounty.score}/100</span></div>
-          <p>{bounty.reason}</p>
-          <button className="button button-primary" disabled={busy} onClick={() => void transact("settle_bounty", [BigInt(id)], ["PAID_FULL", "PAID_PARTIAL", "REFUNDED"])} type="button">
-            {busy ? "Settling escrow..." : "Execute verdict"} <ArrowRight size={17} />
-          </button>
-        </div>
-      )}
-
-      {bounty.status === "EVIDENCE_UNAVAILABLE" && (
-        <div className="recovery-panel">
-          <p className="eyebrow">MUTUAL RECOVERY</p>
-          <h2>One approval from each party.</h2>
-          <p>{bounty.reason}</p>
-          <div className="approval-grid">
-            <span>Buyer {bounty.buyer_recovery === "1" ? <CheckCircle2 /> : "waiting"}</span>
-            <span>Provider {bounty.provider_recovery === "1" ? <CheckCircle2 /> : "waiting"}</span>
-          </div>
-          <button className="button button-primary" disabled={busy} onClick={() => void transact("approve_unavailable_refund", [BigInt(id)], ["EVIDENCE_UNAVAILABLE", "REFUNDED"])} type="button">
-            Approve recovery <ArrowRight size={17} />
-          </button>
-        </div>
-      )}
-
-      {terminal.has(bounty.status) && (
-        <div className="terminal-panel">
-          <CheckCircle2 />
-          <p className="eyebrow">FINAL ON-CHAIN STATE</p>
-          <h2>{bounty.status.replaceAll("_", " ")}</h2>
-          <p>{bounty.reason}</p>
-        </div>
-      )}
-
-      {bounty.status === "OPEN" && (
-        <button className="danger-link" disabled={busy} onClick={() => void transact("cancel_open_bounty", [BigInt(id)], "CANCELLED")} type="button">
-          Buyer: cancel before submission
-        </button>
-      )}
-
-      {bounty.manifest_url && (
-        <section className="packet">
-          <div className="section-heading"><div><p className="eyebrow">IMMUTABLE PACKET</p><h2>Locked evidence</h2></div></div>
-          <div className="packet-grid">
-            <Evidence label="Manifest" url={bounty.manifest_url} digest={bounty.manifest_digest} />
-            <Evidence label="Sample" url={bounty.sample_url} digest={bounty.sample_digest} />
-            {bounty.license_url && <Evidence label="License" url={bounty.license_url} digest={bounty.license_digest} />}
-          </div>
-        </section>
-      )}
-    </section>
-  );
-}
-
-function Evidence({ label, url, digest }: { label: string; url: string; digest: string }) {
-  return (
-    <article>
-      <span>{label}</span>
-      <a href={url} rel="noreferrer" target="_blank">Open snapshot <ExternalLink size={13} /></a>
-      <code>{compactDigest(digest)}</code>
-    </article>
-  );
+  return <section className="detail-page">
+    <div className="detail-header"><Link className="back-link" href="/"><ArrowLeft size={16}/> Market</Link><div className="detail-title"><span className="row-id">TOURNAMENT #{id}</span><h1>{tournament.title}</h1><StatusPill status={tournament.status}/></div><p>{tournament.use_case}</p></div>
+    <div className="evidence-ledger"><div><span>BUYER</span><strong>{shortAddress(tournament.buyer)}</strong><span>CANDIDATES</span><strong>{tournament.candidates}/{tournament.cap}</strong></div><div><span>PRIZE</span><strong>{tournament.prize} wei</strong><span>BOND</span><strong>{tournament.bond} wei</strong></div><div><span>RUBRIC</span><a href={tournament.rubric_url} target="_blank">Open source <ExternalLink size={13}/></a><code>{tournament.rubric_digest.slice(0, 18)}…</code></div></div>
+    <Notice>{message}</Notice>
+    {!wallet && <button className="button button-primary" onClick={() => void connect()}><WalletCards size={17}/> Connect wallet to reveal valid actions</button>}
+    {tournament.status === "OPEN_COMMIT" && canCommit && <form className="action-form" onSubmit={commitEntry}><p className="eyebrow">PROVIDER · SEALED COMMIT</p><h2>Commit digests before reveal.</h2>{(["manifest", "sample", "license"] as const).map((key) => <label key={key}>{key} SHA-256<input required value={commit[key]} onChange={(event) => setCommit({ ...commit, [key]: event.target.value })} placeholder="sha256:..."/></label>)}<button className="button button-primary" disabled={busy}>Post exact bond & commit <ArrowRight size={17}/></button></form>}
+    {tournament.status === "OPEN_COMMIT" && now >= tournament.commit_deadline && <button className="button button-quiet" disabled={busy} onClick={() => void transact("start_reveal", [BigInt(id)], "OPEN_REVEAL")}>Start reveal</button>}
+    {tournament.status === "OPEN_REVEAL" && canReveal && <form className="action-form" onSubmit={revealEntry}><p className="eyebrow">PROVIDER · REVEAL</p><h2>Reveal your immutable packet.</h2>{(["manifest", "sample", "license"] as const).map((key) => <label key={key}>{key} URL<input required value={reveal[key]} onChange={(event) => setReveal({ ...reveal, [key]: event.target.value })}/></label>)}<label>Disclosure note<textarea required value={reveal.note} onChange={(event) => setReveal({ ...reveal, note: event.target.value })}/></label><button className="button button-primary" disabled={busy}>Reveal packet</button></form>}
+    {tournament.status === "OPEN_REVEAL" && now >= tournament.reveal_deadline && <button className="button button-quiet" disabled={busy} onClick={() => void transact("close_reveal", [BigInt(id)], "READY_FOR_JURY")}>Close reveal</button>}
+    {tournament.status === "READY_FOR_JURY" && <div className="decision-panel"><Scale/><h2>Rank eligible datasets.</h2><button className="button button-primary" disabled={busy} onClick={() => void transact("judge_tournament", [BigInt(id)], ["RULING_READY", "EVIDENCE_UNAVAILABLE"])}>Run comparative jury</button></div>}
+    {tournament.status === "RULING_READY" && <div className="verdict-panel"><strong>{tournament.outcome}</strong><p>{tournament.reason}</p><button className="button button-primary" disabled={busy} onClick={() => void transact("settle_tournament", [BigInt(id)], "SETTLED")}>Assign deterministic credits</button></div>}
+    {tournament.status === "EVIDENCE_UNAVAILABLE" && (isBuyer || isProvider) && <div className="recovery-panel"><h2>Fail-closed recovery</h2><p>Buyer and one provider may approve immediately; after the recovery deadline either party may finish recovery.</p><button className="button button-primary" disabled={busy} onClick={() => void transact("recover_unavailable", [BigInt(id)], ["EVIDENCE_UNAVAILABLE", "SETTLED"])}>Approve recovery</button></div>}
+    {tournament.status === "SETTLED" && wallet && <button className="button button-primary" disabled={busy} onClick={() => void withdrawCredit()}>Withdraw my verified credit</button>}
+    <section className="packet"><div className="section-heading"><h2>Candidate matrix</h2></div><div className="packet-grid">{entries.map((entry) => <article key={entry.id}><span>#{entry.id} · {entry.status}</span><strong>{shortAddress(entry.provider)}</strong><code>rank {entry.rank || "—"}</code>{entry.manifest_url && <a href={entry.manifest_url} target="_blank">Manifest <ExternalLink size={13}/></a>}</article>)}</div></section>
+  </section>;
 }

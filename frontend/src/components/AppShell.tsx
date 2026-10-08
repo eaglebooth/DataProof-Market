@@ -10,7 +10,7 @@ import { shortAddress } from "@/lib/format";
 
 const links = [
   { href: "/", label: "Market" },
-  { href: "/bounties/new", label: "Fund request" },
+  { href: "/bounties/new", label: "Fund tournament" },
   { href: "/protocol", label: "Protocol" },
   { href: "/contract", label: "Contract" },
 ];

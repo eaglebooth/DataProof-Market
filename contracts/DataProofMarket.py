@@ -1,487 +1,296 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
-import typing
+import hashlib
 import json
+from datetime import datetime
 
 
 @gl.evm.contract_interface
 class _Recipient:
-    class View:
-        pass
+    class View: pass
+    class Write: pass
 
-    class Write:
-        pass
+
+MAX_CANDIDATES = 5
+COMMIT_SECONDS = 300
+REVEAL_SECONDS = 300
 
 
 class DataProofMarket(gl.Contract):
-    bounty_count: u256
-    bounty_buyer: TreeMap[u256, str]
-    bounty_provider: TreeMap[u256, str]
-    bounty_title: TreeMap[u256, str]
-    bounty_use_case: TreeMap[u256, str]
-    bounty_rubric_url: TreeMap[u256, str]
-    bounty_rubric_digest: TreeMap[u256, str]
-    bounty_manifest_url: TreeMap[u256, str]
-    bounty_manifest_digest: TreeMap[u256, str]
-    bounty_sample_url: TreeMap[u256, str]
-    bounty_sample_digest: TreeMap[u256, str]
-    bounty_license_url: TreeMap[u256, str]
-    bounty_license_digest: TreeMap[u256, str]
-    bounty_submission_note: TreeMap[u256, str]
-    bounty_submitter: TreeMap[u256, str]
-    bounty_escrow: TreeMap[u256, u256]
-    bounty_partial_reward: TreeMap[u256, u256]
-    bounty_status: TreeMap[u256, str]
-    bounty_decision: TreeMap[u256, str]
-    bounty_score: TreeMap[u256, u256]
-    bounty_reason: TreeMap[u256, str]
-    bounty_buyer_recovery: TreeMap[u256, u256]
-    bounty_provider_recovery: TreeMap[u256, u256]
-
+    tournament_count: u256
+    submission_count: u256
+    tournament_data: TreeMap[u256, str]
+    submission_data: TreeMap[u256, str]
+    tournament_slot: TreeMap[str, u256]
+    provider_entry: TreeMap[str, u256]
+    credits: TreeMap[str, u256]
     total_received: u256
-    total_provider_paid: u256
-    total_buyer_refunded: u256
-    total_transferred: u256
-    active_escrow: u256
+    active_prizes: u256
+    active_bonds: u256
+    total_credited: u256
+    total_withdrawn: u256
 
     def __init__(self):
-        self.bounty_count = u256(0)
+        self.tournament_count = u256(0)
+        self.submission_count = u256(0)
         self.total_received = u256(0)
-        self.total_provider_paid = u256(0)
-        self.total_buyer_refunded = u256(0)
-        self.total_transferred = u256(0)
-        self.active_escrow = u256(0)
+        self.active_prizes = u256(0)
+        self.active_bonds = u256(0)
+        self.total_credited = u256(0)
+        self.total_withdrawn = u256(0)
 
-    def _valid_address(self, value: str) -> bool:
-        return value.startswith("0x") and len(value) == 42
+    def _load(self, raw: str) -> dict:
+        return json.loads(raw)
 
-    def _valid_immutable_url(self, value: str) -> bool:
-        lowered = value.lower()
-        prefix = ""
-        if lowered.startswith("https://ipfs.io/ipfs/"):
-            prefix = "https://ipfs.io/ipfs/"
-        elif lowered.startswith("https://arweave.net/"):
-            prefix = "https://arweave.net/"
-        if prefix == "":
-            return False
-        immutable_id = lowered[len(prefix):]
-        return (
-            len(value) <= 500
-            and len(immutable_id) >= 32
-            and "example" not in immutable_id
-            and "replace" not in immutable_id
-        )
+    def _save_t(self, tid: u256, value: dict) -> None:
+        self.tournament_data[tid] = json.dumps(value, sort_keys=True, separators=(",", ":"))
 
-    def _valid_digest(self, value: str) -> bool:
-        if not value.startswith("sha256:") or len(value) != 71:
-            return False
-        digest = value[7:]
-        if digest == ("0" * 64):
+    def _save_s(self, sid: u256, value: dict) -> None:
+        self.submission_data[sid] = json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+    def _now(self) -> int:
+        try:
+            raw = str(gl.message_raw["datetime"])
+            return int(datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp())
+        except Exception:
+            raise gl.vm.UserError("AUTHORITATIVE_TIME_UNAVAILABLE")
+
+    def _url_ok(self, value: str) -> bool:
+        low = value.lower()
+        prefix = "https://ipfs.io/ipfs/" if low.startswith("https://ipfs.io/ipfs/") else "https://arweave.net/" if low.startswith("https://arweave.net/") else ""
+        ident = low[len(prefix):] if prefix else ""
+        return prefix != "" and len(value) <= 500 and len(ident) >= 32 and "example" not in ident and "replace" not in ident
+
+    def _digest_ok(self, value: str) -> bool:
+        if not value.startswith("sha256:") or len(value) != 71 or value[7:] == "0" * 64:
             return False
         try:
-            int(digest, 16)
+            int(value[7:], 16)
             return True
         except Exception:
             return False
 
-    def _is_party(self, bounty_id: u256, sender: str) -> bool:
-        return (
-            sender == self.bounty_buyer[bounty_id]
-            or sender == self.bounty_provider[bounty_id]
-        )
+    def _slot(self, tid: u256, slot: int) -> str:
+        return str(int(tid)) + ":" + str(slot)
 
-    def _parse_review(self, result: typing.Any) -> typing.Any:
-        if isinstance(result, str):
-            try:
-                data = json.loads(result)
-            except Exception:
-                return None
-        else:
-            data = result
-        if not isinstance(data, dict):
-            return None
-        decision = str(data.get("decision", "UNAVAILABLE")).upper()
-        if decision not in ("ACCEPT", "PARTIAL", "REJECT", "UNAVAILABLE"):
-            return None
-        try:
-            score = int(data.get("score", 0))
-        except Exception:
-            return None
-        score = max(0, min(100, score))
-        reason = str(data.get("reason", "No evidence-based reason returned."))[:900]
-        return (decision, score, reason)
+    def _provider(self, tid: u256, address: str) -> str:
+        return str(int(tid)) + ":" + address.lower()
+
+    def _sid_at(self, tid: u256, slot: int):
+        encoded = self.tournament_slot.get(self._slot(tid, slot), u256(0))
+        return None if encoded == u256(0) else encoded - u256(1)
+
+    def _credit(self, address: str, amount: int) -> None:
+        if amount <= 0: return
+        value = u256(amount)
+        self.credits[address] = self.credits.get(address, u256(0)) + value
+        self.total_credited = self.total_credited + value
 
     @gl.public.write.payable
-    def open_bounty(
-        self,
-        provider_address: str,
-        title: str,
-        use_case: str,
-        rubric_url: str,
-        rubric_digest: str,
-        partial_reward: u256,
-    ) -> typing.Any:
-        buyer = gl.message.sender_address.as_hex.lower()
-        provider = provider_address.lower()
-        amount = gl.message.value
+    def open_tournament(self, title: str, use_case: str, rubric_url: str, rubric_digest: str, provider_bond: u256, max_candidates: u256) -> u256:
+        prize = gl.message.value
+        if len(title) < 4 or len(title) > 140: raise gl.vm.UserError("INVALID_TITLE")
+        if len(use_case) < 30 or len(use_case) > 1200: raise gl.vm.UserError("INVALID_USE_CASE")
+        if not self._url_ok(rubric_url): raise gl.vm.UserError("IMMUTABLE_RUBRIC_REQUIRED")
+        if not self._digest_ok(rubric_digest): raise gl.vm.UserError("INVALID_RUBRIC_DIGEST")
+        if prize == u256(0): raise gl.vm.UserError("PRIZE_REQUIRED")
+        if provider_bond == u256(0) or provider_bond >= prize: raise gl.vm.UserError("INVALID_PROVIDER_BOND")
+        if max_candidates < u256(2) or max_candidates > u256(MAX_CANDIDATES): raise gl.vm.UserError("INVALID_CANDIDATE_CAP")
+        now = self._now()
+        tid = self.tournament_count
+        self._save_t(tid, {"id": int(tid), "buyer": gl.message.sender_address.as_hex.lower(), "title": title, "use_case": use_case, "rubric_url": rubric_url, "rubric_digest": rubric_digest.lower(), "prize": str(int(prize)), "bond": str(int(provider_bond)), "cap": int(max_candidates), "candidates": 0, "revealed": 0, "commit_deadline": now + COMMIT_SECONDS, "reveal_deadline": now + COMMIT_SECONDS + REVEAL_SECONDS, "recovery_deadline": 0, "buyer_recovery": False, "provider_recovery": False, "status": "OPEN_COMMIT", "outcome": "PENDING", "winner": -1, "runner_up": -1, "reason": "Waiting for sealed commitments."})
+        self.tournament_count = tid + u256(1)
+        self.total_received = self.total_received + prize
+        self.active_prizes = self.active_prizes + prize
+        return tid
 
-        if not self._valid_address(provider) or provider == buyer:
-            raise gl.vm.UserError("INVALID_PROVIDER")
-        if len(title) < 4 or len(title) > 140:
-            raise gl.vm.UserError("INVALID_TITLE")
-        if len(use_case) < 30 or len(use_case) > 1200:
-            raise gl.vm.UserError("INVALID_USE_CASE")
-        if not self._valid_immutable_url(rubric_url):
-            raise gl.vm.UserError("IMMUTABLE_RUBRIC_REQUIRED")
-        if not self._valid_digest(rubric_digest):
-            raise gl.vm.UserError("INVALID_RUBRIC_DIGEST")
-        if amount == u256(0):
-            raise gl.vm.UserError("ESCROW_REQUIRED")
-        if partial_reward == u256(0) or partial_reward >= amount:
-            raise gl.vm.UserError("INVALID_PARTIAL_REWARD")
-
-        bounty_id = self.bounty_count
-        self.bounty_buyer[bounty_id] = buyer
-        self.bounty_provider[bounty_id] = provider
-        self.bounty_title[bounty_id] = title
-        self.bounty_use_case[bounty_id] = use_case
-        self.bounty_rubric_url[bounty_id] = rubric_url
-        self.bounty_rubric_digest[bounty_id] = rubric_digest.lower()
-        self.bounty_manifest_url[bounty_id] = ""
-        self.bounty_manifest_digest[bounty_id] = ""
-        self.bounty_sample_url[bounty_id] = ""
-        self.bounty_sample_digest[bounty_id] = ""
-        self.bounty_license_url[bounty_id] = ""
-        self.bounty_license_digest[bounty_id] = ""
-        self.bounty_submission_note[bounty_id] = ""
-        self.bounty_submitter[bounty_id] = ""
-        self.bounty_escrow[bounty_id] = amount
-        self.bounty_partial_reward[bounty_id] = partial_reward
-        self.bounty_status[bounty_id] = "OPEN"
-        self.bounty_decision[bounty_id] = "PENDING"
-        self.bounty_score[bounty_id] = u256(0)
-        self.bounty_reason[bounty_id] = "Waiting for the provider evidence packet."
-        self.bounty_buyer_recovery[bounty_id] = u256(0)
-        self.bounty_provider_recovery[bounty_id] = u256(0)
-        self.total_received = self.total_received + amount
-        self.active_escrow = self.active_escrow + amount
-        self.bounty_count = bounty_id + u256(1)
-        return bounty_id
+    @gl.public.write.payable
+    def commit_submission(self, tid: u256, manifest_digest: str, sample_digest: str, license_digest: str) -> u256:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid]); sender = gl.message.sender_address.as_hex.lower()
+        if t["status"] != "OPEN_COMMIT" or self._now() >= t["commit_deadline"]: raise gl.vm.UserError("COMMIT_WINDOW_CLOSED")
+        if sender == t["buyer"]: raise gl.vm.UserError("BUYER_CANNOT_COMPETE")
+        key = self._provider(tid, sender)
+        if self.provider_entry.get(key, u256(0)) != u256(0): raise gl.vm.UserError("DUPLICATE_PROVIDER")
+        if t["candidates"] >= t["cap"]: raise gl.vm.UserError("CANDIDATE_CAP_REACHED")
+        if gl.message.value != u256(int(t["bond"])): raise gl.vm.UserError("EXACT_BOND_REQUIRED")
+        if not all(self._digest_ok(x) for x in (manifest_digest, sample_digest, license_digest)): raise gl.vm.UserError("INVALID_EVIDENCE_DIGEST")
+        sid = self.submission_count
+        self._save_s(sid, {"id": int(sid), "tournament_id": int(tid), "provider": sender, "manifest_digest": manifest_digest.lower(), "sample_digest": sample_digest.lower(), "license_digest": license_digest.lower(), "manifest_url": "", "sample_url": "", "license_url": "", "note": "", "bond": t["bond"], "status": "COMMITTED", "rank": 0})
+        self.tournament_slot[self._slot(tid, t["candidates"])] = sid + u256(1)
+        self.provider_entry[key] = sid + u256(1)
+        t["candidates"] += 1; self._save_t(tid, t)
+        self.submission_count = sid + u256(1)
+        self.total_received += gl.message.value; self.active_bonds += gl.message.value
+        return sid
 
     @gl.public.write
-    def submit_dataset(
-        self,
-        bounty_id: u256,
-        manifest_url: str,
-        manifest_digest: str,
-        sample_url: str,
-        sample_digest: str,
-        submission_note: str,
-    ) -> str:
-        if bounty_id >= self.bounty_count:
-            raise gl.vm.UserError("BOUNTY_NOT_FOUND")
-        sender = gl.message.sender_address.as_hex.lower()
-        if sender != self.bounty_provider[bounty_id]:
-            raise gl.vm.UserError("PROVIDER_ONLY")
-        if self.bounty_status[bounty_id] != "OPEN":
-            raise gl.vm.UserError("SUBMISSION_WINDOW_CLOSED")
-        if not self._valid_immutable_url(manifest_url):
-            raise gl.vm.UserError("IMMUTABLE_MANIFEST_REQUIRED")
-        if not self._valid_digest(manifest_digest):
-            raise gl.vm.UserError("INVALID_MANIFEST_DIGEST")
-        if not self._valid_immutable_url(sample_url):
-            raise gl.vm.UserError("IMMUTABLE_SAMPLE_REQUIRED")
-        if not self._valid_digest(sample_digest):
-            raise gl.vm.UserError("INVALID_SAMPLE_DIGEST")
-        if len(submission_note) < 20 or len(submission_note) > 800:
-            raise gl.vm.UserError("INVALID_SUBMISSION_NOTE")
-
-        self.bounty_manifest_url[bounty_id] = manifest_url
-        self.bounty_manifest_digest[bounty_id] = manifest_digest.lower()
-        self.bounty_sample_url[bounty_id] = sample_url
-        self.bounty_sample_digest[bounty_id] = sample_digest.lower()
-        self.bounty_submission_note[bounty_id] = submission_note
-        self.bounty_submitter[bounty_id] = sender
-        self.bounty_status[bounty_id] = "PACKET_STARTED"
-        self.bounty_decision[bounty_id] = "PENDING"
-        self.bounty_score[bounty_id] = u256(0)
-        self.bounty_reason[bounty_id] = "Manifest and sample locked; waiting for license evidence."
-        return "DATASET_CORE_LOCKED"
+    def start_reveal(self, tid: u256) -> str:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid])
+        if t["status"] != "OPEN_COMMIT": raise gl.vm.UserError("REVEAL_ALREADY_STARTED")
+        if self._now() < t["commit_deadline"]: raise gl.vm.UserError("COMMIT_WINDOW_ACTIVE")
+        t["status"] = "OPEN_REVEAL"; t["reason"] = "Commitments sealed; reveal immutable packets."
+        self._save_t(tid, t); return t["status"]
 
     @gl.public.write
-    def attach_license(
-        self,
-        bounty_id: u256,
-        license_url: str,
-        license_digest: str,
-    ) -> str:
-        if bounty_id >= self.bounty_count:
-            raise gl.vm.UserError("BOUNTY_NOT_FOUND")
-        sender = gl.message.sender_address.as_hex.lower()
-        if sender != self.bounty_provider[bounty_id]:
-            raise gl.vm.UserError("PROVIDER_ONLY")
-        if self.bounty_status[bounty_id] != "PACKET_STARTED":
-            raise gl.vm.UserError("LICENSE_WINDOW_CLOSED")
-        if not self._valid_immutable_url(license_url):
-            raise gl.vm.UserError("IMMUTABLE_LICENSE_REQUIRED")
-        if not self._valid_digest(license_digest):
-            raise gl.vm.UserError("INVALID_LICENSE_DIGEST")
-
-        self.bounty_license_url[bounty_id] = license_url
-        self.bounty_license_digest[bounty_id] = license_digest.lower()
-        self.bounty_status[bounty_id] = "SUBMITTED"
-        self.bounty_reason[bounty_id] = "Complete immutable packet locked; waiting for jury review."
-        return "DATASET_PACKET_LOCKED"
+    def reveal_dataset(self, tid: u256, manifest_url: str, sample_url: str, license_url: str, note: str) -> str:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid]); now = self._now()
+        if t["status"] != "OPEN_REVEAL" or now < t["commit_deadline"] or now >= t["reveal_deadline"]: raise gl.vm.UserError("REVEAL_WINDOW_CLOSED")
+        encoded = self.provider_entry.get(self._provider(tid, gl.message.sender_address.as_hex.lower()), u256(0))
+        if encoded == u256(0): raise gl.vm.UserError("COMMITMENT_NOT_FOUND")
+        sid = encoded - u256(1); s = self._load(self.submission_data[sid])
+        if s["status"] != "COMMITTED": raise gl.vm.UserError("SUBMISSION_ALREADY_REVEALED")
+        if not all(self._url_ok(x) for x in (manifest_url, sample_url, license_url)): raise gl.vm.UserError("IMMUTABLE_EVIDENCE_REQUIRED")
+        if len(note) < 20 or len(note) > 800: raise gl.vm.UserError("INVALID_SUBMISSION_NOTE")
+        s.update({"manifest_url": manifest_url, "sample_url": sample_url, "license_url": license_url, "note": note, "status": "REVEALED"})
+        t["revealed"] += 1; self._save_s(sid, s); self._save_t(tid, t); return "REVEALED"
 
     @gl.public.write
-    def review_dataset(self, bounty_id: u256) -> str:
-        if bounty_id >= self.bounty_count:
-            raise gl.vm.UserError("BOUNTY_NOT_FOUND")
-        sender = gl.message.sender_address.as_hex.lower()
-        if not self._is_party(bounty_id, sender):
-            raise gl.vm.UserError("PARTY_ONLY")
-        if self.bounty_status[bounty_id] != "SUBMITTED":
-            raise gl.vm.UserError("DATASET_NOT_READY")
+    def close_reveal(self, tid: u256) -> str:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid])
+        if t["status"] != "OPEN_REVEAL" or self._now() < t["reveal_deadline"]: raise gl.vm.UserError("REVEAL_WINDOW_ACTIVE")
+        for slot in range(MAX_CANDIDATES):
+            if slot >= t["candidates"]: break
+            sid = self._sid_at(tid, slot); s = self._load(self.submission_data[sid])
+            if s["status"] == "COMMITTED": s["status"] = "NO_REVEAL"; self._save_s(sid, s)
+        t["status"] = "READY_FOR_JURY"; t["reason"] = "Reveal closed; packets await verification and ranking."
+        self._save_t(tid, t); return t["status"]
 
-        title = self.bounty_title[bounty_id]
-        use_case = self.bounty_use_case[bounty_id]
-        rubric_url = self.bounty_rubric_url[bounty_id]
-        rubric_digest = self.bounty_rubric_digest[bounty_id]
-        manifest_url = self.bounty_manifest_url[bounty_id]
-        manifest_digest = self.bounty_manifest_digest[bounty_id]
-        sample_url = self.bounty_sample_url[bounty_id]
-        sample_digest = self.bounty_sample_digest[bounty_id]
-        license_url = self.bounty_license_url[bounty_id]
-        license_digest = self.bounty_license_digest[bounty_id]
-        submission_note = self.bounty_submission_note[bounty_id]
-
-        def evaluate() -> str:
-            def render_source(url: str, label: str) -> str:
+    @gl.public.write
+    def judge_tournament(self, tid: u256) -> str:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid])
+        if t["status"] != "READY_FOR_JURY": raise gl.vm.UserError("JURY_NOT_READY")
+        eligible = []; packets = []
+        for slot in range(MAX_CANDIDATES):
+            if slot >= t["candidates"]: break
+            sid = self._sid_at(tid, slot); s = self._load(self.submission_data[sid])
+            if s["status"] != "REVEALED": continue
+            urls = [s["manifest_url"], s["sample_url"], s["license_url"]]; digests = [s["manifest_digest"], s["sample_digest"], s["license_digest"]]
+            def verify() -> str:
                 try:
-                    content = gl.nondet.web.render(url, mode="text").strip()
-                    if len(content) < 80:
-                        return label + "_UNAVAILABLE"
-                    return content[:2800]
-                except Exception:
-                    return label + "_UNAVAILABLE"
+                    for i in range(3):
+                        body = gl.nondet.web.render(urls[i], mode="text").strip()
+                        if len(body) < 80: return "UNAVAILABLE"
+                        if "sha256:" + hashlib.sha256(body.encode()).hexdigest() != digests[i]: return "INVALID"
+                    return "VALID"
+                except Exception: return "UNAVAILABLE"
+            try: verification = str(gl.eq_principle.strict_eq(verify)).strip().upper()
+            except Exception: verification = "UNAVAILABLE"
+            if verification == "UNAVAILABLE":
+                s["status"] = "UNAVAILABLE"; self._save_s(sid, s)
+                continue
+            s["status"] = "ELIGIBLE" if verification == "VALID" else "INVALID"; self._save_s(sid, s)
+            if verification == "VALID": eligible.append(int(sid)); packets.append(s)
+        if len(eligible) < 2:
+            t.update({"outcome": "NO_QUALIFIED_DATASET", "status": "RULING_READY", "reason": "Fewer than two packets passed exact digest verification; no competitive winner can be selected. Revealed participation bonds remain refundable."}); self._save_t(tid, t); return t["status"]
+        rubric_url, rubric_digest = t["rubric_url"], t["rubric_digest"]
+        def evaluate() -> str:
+            try:
+                rubric = gl.nondet.web.render(rubric_url, mode="text").strip()
+                if "sha256:" + hashlib.sha256(rubric.encode()).hexdigest() != rubric_digest: return '{"outcome":"UNAVAILABLE","winner_id":-1,"runner_up_id":-1,"reason":"Rubric mismatch"}'
+                blocks = []
+                for s in packets:
+                    parts = [gl.nondet.web.render(s[k], mode="text").strip()[:2600] for k in ("manifest_url", "sample_url", "license_url")]
+                    blocks.append("CANDIDATE #" + str(s["id"]) + "\n" + "\n".join(parts))
+                return gl.nondet.exec_prompt("Rank datasets for: " + t["use_case"] + "\nRUBRIC:\n" + rubric[:2600] + "\n" + "\n".join(blocks) + '\nReturn ONLY {"outcome":"RANKED|NO_QUALIFIED_DATASET|UNAVAILABLE","winner_id":0,"runner_up_id":-1,"reason":"under 700 chars"}. Never invent ids.')
+            except Exception: return '{"outcome":"UNAVAILABLE","winner_id":-1,"runner_up_id":-1,"reason":"Evidence unavailable"}'
+        principle = "Equivalent only if outcome, winner id, and runner-up id match. Reason wording may differ. Never accept ids outside the eligible candidates."
+        try: data = json.loads(gl.eq_principle.prompt_comparative(evaluate, principle))
+        except Exception: data = {"outcome": "UNAVAILABLE"}
+        outcome = str(data.get("outcome", "UNAVAILABLE")).upper()
+        try:
+            winner = int(data.get("winner_id", -1)); runner = int(data.get("runner_up_id", -1))
+        except Exception:
+            outcome = "UNAVAILABLE"; winner = -1; runner = -1
+        reason = str(data.get("reason", "Unsafe ranking."))[:900]
+        valid_rank = outcome == "RANKED" and winner in eligible and runner in eligible and runner != winner
+        valid_empty = outcome in ("NO_QUALIFIED_DATASET", "UNAVAILABLE") and winner == -1 and runner == -1
+        if not (valid_rank or valid_empty): outcome = "UNAVAILABLE"; winner = -1; runner = -1
+        t.update({"outcome": outcome, "winner": winner, "runner_up": runner, "reason": reason, "status": "EVIDENCE_UNAVAILABLE" if outcome == "UNAVAILABLE" else "RULING_READY"})
+        if outcome == "UNAVAILABLE": t["recovery_deadline"] = self._now() + REVEAL_SECONDS
+        if winner >= 0:
+            s = self._load(self.submission_data[u256(winner)]); s["rank"] = 1; self._save_s(u256(winner), s)
+        self._save_t(tid, t); return t["status"]
 
-            rubric = render_source(rubric_url, "RUBRIC")
-            manifest = render_source(manifest_url, "MANIFEST")
-            sample = render_source(sample_url, "SAMPLE")
-            license_text = render_source(license_url, "LICENSE")
-            prompt = f"""You are the independent GenLayer dataset procurement jury.
-Real escrowed GEN depends on this judgment. Evaluate semantic usefulness, not JSON shape.
-
-BOUNTY
-Title: {title}
-Intended use: {use_case}
-Locked rubric digest: {rubric_digest}
-
-PROVIDER PACKET
-Manifest digest: {manifest_digest}
-Sample digest: {sample_digest}
-License digest: {license_digest}
-Provider note: {submission_note}
-
-LOCKED RUBRIC CONTENT
-{rubric}
-
-DATASET MANIFEST CONTENT
-{manifest}
-
-BOUNDED SAMPLE CONTENT
-{sample}
-
-LICENSE SNAPSHOT CONTENT
-{license_text}
-
-Judge:
-- fitness for the stated use case and rubric coverage;
-- documentation, schema clarity, and usable sample quality;
-- provenance disclosures and duplicate/leakage risk;
-- compatibility with the required license;
-- whether unavailable or contradictory sources prevent a safe payout.
-
-Scoring:
-80-100 ACCEPT: useful, documented, provenance-aware, and license-compatible.
-50-79 PARTIAL: meaningful value but material gaps justify only the locked partial reward.
-0-49 REJECT: unusable, misleading, incompatible, or unsupported.
-If any source ends in _UNAVAILABLE, return UNAVAILABLE.
-
-Respond with ONLY:
-{{"decision":"ACCEPT|PARTIAL|REJECT|UNAVAILABLE","score":0,"reason":"evidence-based reason under 700 chars"}}"""
-            return gl.nondet.exec_prompt(prompt)
-
-        principle = """Compare the substantive economic verdict. Outputs are equivalent only
-when they choose the same decision band (ACCEPT, PARTIAL, REJECT, or UNAVAILABLE)
-and their scores remain in that band's stated range. Wording and minor score
-differences inside the same band may differ, but license compatibility, provenance,
-and evidence availability must not contradict each other."""
-        parsed = self._parse_review(
-            gl.eq_principle.prompt_comparative(evaluate, principle)
-        )
-        if parsed is None:
-            self.bounty_status[bounty_id] = "EVIDENCE_UNAVAILABLE"
-            self.bounty_decision[bounty_id] = "UNAVAILABLE"
-            self.bounty_score[bounty_id] = u256(0)
-            self.bounty_reason[bounty_id] = "Validator output could not be safely interpreted."
-            return "EVIDENCE_UNAVAILABLE"
-
-        decision, score, reason = parsed
-        if decision == "ACCEPT" and score < 80:
-            decision = "PARTIAL" if score >= 50 else "REJECT"
-        if decision == "PARTIAL" and (score < 50 or score >= 80):
-            decision = "REJECT" if score < 50 else "ACCEPT"
-        if decision == "REJECT" and score >= 50:
-            decision = "PARTIAL" if score < 80 else "ACCEPT"
-
-        self.bounty_decision[bounty_id] = decision
-        self.bounty_score[bounty_id] = u256(score)
-        self.bounty_reason[bounty_id] = reason
-        if decision in ("ACCEPT", "PARTIAL", "REJECT"):
-            self.bounty_status[bounty_id] = "RULING_READY"
-        else:
-            self.bounty_status[bounty_id] = "EVIDENCE_UNAVAILABLE"
-        return self.bounty_status[bounty_id]
+    def _settle(self, tid: u256, t: dict) -> None:
+        prize = int(t["prize"])
+        self._credit(self._load(self.submission_data[u256(t["winner"])])["provider"] if t["outcome"] == "RANKED" else t["buyer"], prize)
+        self.active_prizes -= u256(prize); t["prize"] = "0"
+        for slot in range(MAX_CANDIDATES):
+            if slot >= t["candidates"]: break
+            sid = self._sid_at(tid, slot); s = self._load(self.submission_data[sid]); bond = int(s["bond"])
+            refundable = s["status"] in ("ELIGIBLE", "REVEALED", "INVALID", "UNAVAILABLE")
+            self._credit(s["provider"] if refundable else t["buyer"], bond)
+            if s["status"] == "NO_REVEAL": s["status"] = "FORFEITED"
+            s["bond"] = "0"; self.active_bonds -= u256(bond); self._save_s(sid, s)
+        t["status"] = "SETTLED"; self._save_t(tid, t)
 
     @gl.public.write
-    def settle_bounty(self, bounty_id: u256) -> str:
-        if bounty_id >= self.bounty_count:
-            raise gl.vm.UserError("BOUNTY_NOT_FOUND")
+    def settle_tournament(self, tid: u256) -> str:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid])
+        if t["status"] != "RULING_READY": raise gl.vm.UserError("RULING_NOT_READY")
+        self._settle(tid, t); return "SETTLED"
+
+    @gl.public.write
+    def recover_unavailable(self, tid: u256) -> str:
+        if tid >= self.tournament_count: raise gl.vm.UserError("TOURNAMENT_NOT_FOUND")
+        t = self._load(self.tournament_data[tid])
+        if t["status"] != "EVIDENCE_UNAVAILABLE": raise gl.vm.UserError("RECOVERY_NOT_AVAILABLE")
         sender = gl.message.sender_address.as_hex.lower()
-        if not self._is_party(bounty_id, sender):
-            raise gl.vm.UserError("PARTY_ONLY")
-        if self.bounty_status[bounty_id] != "RULING_READY":
-            raise gl.vm.UserError("RULING_NOT_READY")
-
-        amount = self.bounty_escrow[bounty_id]
-        if amount == u256(0) or amount > self.balance:
-            raise gl.vm.UserError("ESCROW_INVARIANT_BROKEN")
-        decision = self.bounty_decision[bounty_id]
-        buyer = self.bounty_buyer[bounty_id]
-        provider = self.bounty_provider[bounty_id]
-        provider_amount = u256(0)
-        buyer_amount = u256(0)
-        terminal_status = ""
-
-        if decision == "ACCEPT":
-            provider_amount = amount
-            terminal_status = "PAID_FULL"
-        elif decision == "PARTIAL":
-            provider_amount = self.bounty_partial_reward[bounty_id]
-            buyer_amount = amount - provider_amount
-            terminal_status = "PAID_PARTIAL"
-        elif decision == "REJECT":
-            buyer_amount = amount
-            terminal_status = "REFUNDED"
+        if sender == t["buyer"]: t["buyer_recovery"] = True
         else:
-            raise gl.vm.UserError("INVALID_SETTLEMENT_DECISION")
-
-        self.bounty_escrow[bounty_id] = u256(0)
-        self.active_escrow = self.active_escrow - amount
-        self.total_provider_paid = self.total_provider_paid + provider_amount
-        self.total_buyer_refunded = self.total_buyer_refunded + buyer_amount
-        self.total_transferred = self.total_transferred + amount
-        self.bounty_status[bounty_id] = terminal_status
-        if provider_amount > u256(0):
-            _Recipient(Address(provider)).emit_transfer(value=provider_amount)
-        if buyer_amount > u256(0):
-            _Recipient(Address(buyer)).emit_transfer(value=buyer_amount)
-        return terminal_status
+            is_provider = False
+            for slot in range(MAX_CANDIDATES):
+                if slot >= t["candidates"]: break
+                sid = self._sid_at(tid, slot)
+                if self._load(self.submission_data[sid])["provider"] == sender: is_provider = True; break
+            if not is_provider: raise gl.vm.UserError("PARTY_ONLY")
+            t["provider_recovery"] = True
+        timed_out = t["recovery_deadline"] > 0 and self._now() >= t["recovery_deadline"]
+        if not ((t["buyer_recovery"] and t["provider_recovery"]) or timed_out):
+            self._save_t(tid, t); return "RECOVERY_APPROVAL_RECORDED"
+        t["outcome"] = "UNAVAILABLE"; self._settle(tid, t); return "SETTLED"
 
     @gl.public.write
-    def cancel_open_bounty(self, bounty_id: u256) -> str:
-        if bounty_id >= self.bounty_count:
-            raise gl.vm.UserError("BOUNTY_NOT_FOUND")
-        buyer = self.bounty_buyer[bounty_id]
-        if gl.message.sender_address.as_hex.lower() != buyer:
-            raise gl.vm.UserError("BUYER_ONLY")
-        if self.bounty_status[bounty_id] != "OPEN":
-            raise gl.vm.UserError("CANCELLATION_CLOSED")
-
-        amount = self.bounty_escrow[bounty_id]
-        self.bounty_escrow[bounty_id] = u256(0)
-        self.active_escrow = self.active_escrow - amount
-        self.total_buyer_refunded = self.total_buyer_refunded + amount
-        self.total_transferred = self.total_transferred + amount
-        self.bounty_status[bounty_id] = "CANCELLED"
-        self.bounty_decision[bounty_id] = "REFUND"
-        self.bounty_reason[bounty_id] = "Buyer cancelled before a dataset packet was submitted."
-        _Recipient(Address(buyer)).emit_transfer(value=amount)
-        return "CANCELLED"
-
-    @gl.public.write
-    def approve_unavailable_refund(self, bounty_id: u256) -> str:
-        if bounty_id >= self.bounty_count:
-            raise gl.vm.UserError("BOUNTY_NOT_FOUND")
-        if self.bounty_status[bounty_id] != "EVIDENCE_UNAVAILABLE":
-            raise gl.vm.UserError("RECOVERY_NOT_AVAILABLE")
-        sender = gl.message.sender_address.as_hex.lower()
-        buyer = self.bounty_buyer[bounty_id]
-        provider = self.bounty_provider[bounty_id]
-        if sender == buyer:
-            self.bounty_buyer_recovery[bounty_id] = u256(1)
-        elif sender == provider:
-            self.bounty_provider_recovery[bounty_id] = u256(1)
-        else:
-            raise gl.vm.UserError("PARTY_ONLY")
-
-        if (
-            self.bounty_buyer_recovery[bounty_id] == u256(1)
-            and self.bounty_provider_recovery[bounty_id] == u256(1)
-        ):
-            amount = self.bounty_escrow[bounty_id]
-            self.bounty_escrow[bounty_id] = u256(0)
-            self.active_escrow = self.active_escrow - amount
-            self.total_buyer_refunded = self.total_buyer_refunded + amount
-            self.total_transferred = self.total_transferred + amount
-            self.bounty_status[bounty_id] = "REFUNDED"
-            self.bounty_decision[bounty_id] = "MUTUAL_REFUND"
-            self.bounty_reason[bounty_id] = "Both parties approved recovery after unavailable evidence."
-            _Recipient(Address(buyer)).emit_transfer(value=amount)
-            return "REFUNDED"
-        return "RECOVERY_APPROVAL_RECORDED"
+    def withdraw(self) -> u256:
+        sender = gl.message.sender_address.as_hex.lower(); amount = self.credits.get(sender, u256(0))
+        if amount == u256(0): raise gl.vm.UserError("NOTHING_TO_WITHDRAW")
+        if amount > self.balance: raise gl.vm.UserError("CUSTODY_INVARIANT_BROKEN")
+        self.credits[sender] = u256(0); self.total_credited -= amount; self.total_withdrawn += amount
+        _Recipient(Address(sender)).emit_transfer(value=amount); return amount
 
     @gl.public.view
-    def get_bounty(self, bounty_id: u256) -> str:
-        if bounty_id >= self.bounty_count:
-            return "{}"
-        data = {
-            "id": str(bounty_id),
-            "buyer": self.bounty_buyer[bounty_id],
-            "provider": self.bounty_provider[bounty_id],
-            "title": self.bounty_title[bounty_id],
-            "use_case": self.bounty_use_case[bounty_id],
-            "rubric_url": self.bounty_rubric_url[bounty_id],
-            "rubric_digest": self.bounty_rubric_digest[bounty_id],
-            "manifest_url": self.bounty_manifest_url[bounty_id],
-            "manifest_digest": self.bounty_manifest_digest[bounty_id],
-            "sample_url": self.bounty_sample_url[bounty_id],
-            "sample_digest": self.bounty_sample_digest[bounty_id],
-            "license_url": self.bounty_license_url[bounty_id],
-            "license_digest": self.bounty_license_digest[bounty_id],
-            "submission_note": self.bounty_submission_note[bounty_id],
-            "submitter": self.bounty_submitter[bounty_id],
-            "escrow": str(self.bounty_escrow[bounty_id]),
-            "partial_reward": str(self.bounty_partial_reward[bounty_id]),
-            "status": self.bounty_status[bounty_id],
-            "decision": self.bounty_decision[bounty_id],
-            "score": str(self.bounty_score[bounty_id]),
-            "reason": self.bounty_reason[bounty_id],
-            "buyer_recovery": str(self.bounty_buyer_recovery[bounty_id]),
-            "provider_recovery": str(self.bounty_provider_recovery[bounty_id]),
-        }
-        return json.dumps(data, sort_keys=True, separators=(",", ":"))
+    def get_tournament(self, tid: u256) -> str:
+        return "{}" if tid >= self.tournament_count else self.tournament_data[tid]
+
+    @gl.public.view
+    def get_submission(self, sid: u256) -> str:
+        return "{}" if sid >= self.submission_count else self.submission_data[sid]
+
+    @gl.public.view
+    def get_tournament_submission(self, tid: u256, slot: u256) -> str:
+        if tid >= self.tournament_count: return "{}"
+        t = self._load(self.tournament_data[tid])
+        if int(slot) >= t["candidates"]: return "{}"
+        sid = self._sid_at(tid, int(slot))
+        return "{}" if sid is None or sid >= self.submission_count else self.submission_data[sid]
+
+    @gl.public.view
+    def get_provider_submission(self, tid: u256, address: str) -> str:
+        if tid >= self.tournament_count: return "{}"
+        encoded = self.provider_entry.get(self._provider(tid, address), u256(0))
+        return "{}" if encoded == u256(0) else self.submission_data[encoded - u256(1)]
+
+    @gl.public.view
+    def get_withdrawable(self, address: str) -> str:
+        return str(self.credits.get(address.lower(), u256(0)))
 
     @gl.public.view
     def get_state(self) -> str:
-        data = {
-            "active_escrow": str(self.active_escrow),
-            "bounty_count": str(self.bounty_count),
-            "total_buyer_refunded": str(self.total_buyer_refunded),
-            "total_provider_paid": str(self.total_provider_paid),
-            "total_received": str(self.total_received),
-            "total_transferred": str(self.total_transferred),
-        }
-        return json.dumps(data, sort_keys=True, separators=(",", ":"))
+        return json.dumps({"tournament_count": str(self.tournament_count), "submission_count": str(self.submission_count), "active_prizes": str(self.active_prizes), "active_bonds": str(self.active_bonds), "total_received": str(self.total_received), "total_credited": str(self.total_credited), "total_withdrawn": str(self.total_withdrawn)}, sort_keys=True, separators=(",", ":"))

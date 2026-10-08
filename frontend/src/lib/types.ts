@@ -1,43 +1,4 @@
-export type MarketState = {
-  active_escrow: string;
-  bounty_count: string;
-  total_buyer_refunded: string;
-  total_provider_paid: string;
-  total_received: string;
-  total_transferred: string;
-};
-
-export type Bounty = {
-  id: string;
-  buyer: string;
-  provider: string;
-  title: string;
-  use_case: string;
-  rubric_url: string;
-  rubric_digest: string;
-  manifest_url: string;
-  manifest_digest: string;
-  sample_url: string;
-  sample_digest: string;
-  license_url: string;
-  license_digest: string;
-  submission_note: string;
-  submitter: string;
-  escrow: string;
-  partial_reward: string;
-  status: string;
-  decision: string;
-  score: string;
-  reason: string;
-  buyer_recovery: string;
-  provider_recovery: string;
-};
-
-export const EMPTY_STATE: MarketState = {
-  active_escrow: "0",
-  bounty_count: "0",
-  total_buyer_refunded: "0",
-  total_provider_paid: "0",
-  total_received: "0",
-  total_transferred: "0",
-};
+export type MarketState = { tournament_count:string; submission_count:string; active_prizes:string; active_bonds:string; total_received:string; total_credited:string; total_withdrawn:string };
+export type Tournament = { id:number; buyer:string; title:string; use_case:string; rubric_url:string; rubric_digest:string; prize:string; bond:string; cap:number; candidates:number; revealed:number; commit_deadline:number; reveal_deadline:number; recovery_deadline:number; buyer_recovery:boolean; provider_recovery:boolean; status:string; outcome:string; winner:number; runner_up:number; reason:string };
+export type Submission = { id:number; tournament_id:number; provider:string; manifest_digest:string; sample_digest:string; license_digest:string; manifest_url:string; sample_url:string; license_url:string; note:string; bond:string; status:string; rank:number };
+export const EMPTY_STATE:MarketState={tournament_count:"0",submission_count:"0",active_prizes:"0",active_bonds:"0",total_received:"0",total_credited:"0",total_withdrawn:"0"};

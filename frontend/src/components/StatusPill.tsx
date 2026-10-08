@@ -1,4 +1,4 @@
-const terminal = new Set(["PAID_FULL", "PAID_PARTIAL", "REFUNDED", "CANCELLED"]);
+const terminal = new Set(["SETTLED", "PAID_FULL", "PAID_PARTIAL", "REFUNDED", "CANCELLED"]);
 
 export function StatusPill({ status }: { status: string }) {
   const className = status === "RULING_READY"

@@ -8,8 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:live": "node scripts/live-lifecycle.mjs",
-    "test:adversarial": "node scripts/live-adversarial.mjs"
+    "test:live:v1": "node scripts/live-lifecycle.mjs",
+    "test:adversarial:v1": "node scripts/live-adversarial.mjs",
+    "test:live": "node scripts/live-tournament-v2.mjs"
   },
   "dependencies": {
     "genlayer-js": "1.1.8",

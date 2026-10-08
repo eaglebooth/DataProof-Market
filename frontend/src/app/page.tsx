@@ -9,11 +9,11 @@ import { Reveal } from "@/components/Reveal";
 import { StatusPill } from "@/components/StatusPill";
 import { configuredAddress, readContract } from "@/lib/genlayer";
 import { parseJsonResult } from "@/lib/format";
-import { Bounty, EMPTY_STATE, MarketState } from "@/lib/types";
+import { EMPTY_STATE, MarketState, Tournament } from "@/lib/types";
 
 export default function MarketPage() {
   const [state, setState] = useState<MarketState>(EMPTY_STATE);
-  const [bounties, setBounties] = useState<Bounty[]>([]);
+  const [bounties, setBounties] = useState<Tournament[]>([]);
   const [message, setMessage] = useState("Loading the canonical Studionet market.");
   const [loading, setLoading] = useState(false);
 
@@ -32,11 +32,11 @@ export default function MarketPage() {
     try {
       const nextState = parseJsonResult<MarketState>(result.data);
       setState(nextState);
-      const count = Math.min(Number(nextState.bounty_count || 0), 12);
+      const count = Math.min(Number(nextState.tournament_count || 0), 12);
       const rows = await Promise.all(
-        Array.from({ length: count }, (_, id) => readContract("get_bounty", [BigInt(id)])),
+        Array.from({ length: count }, (_, id) => readContract("get_tournament", [BigInt(id)])),
       );
-      setBounties(rows.filter((row) => row.success).map((row) => parseJsonResult<Bounty>(row.data)).reverse());
+      setBounties(rows.filter((row) => row.success).map((row) => parseJsonResult<Tournament>(row.data)).reverse());
       setMessage(`Live state received. ${count} bounded record${count === 1 ? "" : "s"} inspected.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Contract response could not be parsed.");
@@ -56,8 +56,8 @@ export default function MarketPage() {
           <p className="eyebrow">GENLAYER DATASET PROCUREMENT</p>
           <h1>Buy useful data.<br /><em>Not confident claims.</em></h1>
           <p className="hero-lede">
-            Buyers lock real GEN and a public rubric. Providers lock immutable dataset evidence.
-            A GenLayer jury decides the payout band.
+            Buyers fund a prize. Providers post bonds and seal evidence digests before reveal.
+            A GenLayer jury ranks eligible datasets under one rubric.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/bounties/new">Fund a dataset request <ArrowRight size={17} /></Link>
@@ -68,10 +68,10 @@ export default function MarketPage() {
       </section>
 
       <Reveal className="metric-band">
-        <div><strong>{state.bounty_count}</strong><span>requests</span></div>
-        <div><strong>{state.active_escrow} wei</strong><span>active escrow</span></div>
-        <div><strong>{state.total_provider_paid} wei</strong><span>provider payouts</span></div>
-        <div><strong>{state.total_buyer_refunded} wei</strong><span>buyer refunds</span></div>
+        <div><strong>{state.tournament_count}</strong><span>tournaments</span></div>
+        <div><strong>{state.submission_count}</strong><span>sealed entries</span></div>
+        <div><strong>{state.active_prizes} wei</strong><span>active prizes</span></div>
+        <div><strong>{state.active_bonds} wei</strong><span>active bonds</span></div>
       </Reveal>
 
       <section className="workflow-section" id="how-it-works">
@@ -122,9 +122,9 @@ export default function MarketPage() {
           <div className="bounty-list">
             {bounties.map((bounty) => (
               <Link className="bounty-row" href={`/bounties/${bounty.id}`} key={bounty.id}>
-                <span className="row-id">#{bounty.id.padStart(2, "0")}</span>
+                <span className="row-id">#{String(bounty.id).padStart(2, "0")}</span>
                 <span className="row-main"><strong>{bounty.title}</strong><small>{bounty.use_case}</small></span>
-                <span className="row-value">{bounty.escrow} wei</span>
+                <span className="row-value">{bounty.prize} wei prize</span>
                 <StatusPill status={bounty.status} />
                 <ArrowRight size={18} />
               </Link>
