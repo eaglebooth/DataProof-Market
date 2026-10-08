@@ -1,8 +1,8 @@
 {
   "network": "studionet",
   "contractName": "DataProofMarket",
-  "contractAddress": "0x4AD7AaDf9e75563702B849866f55b524dA7420c1",
+  "contractAddress": "0x6e2F654E69562129aC62ea0a0289CAf960e6b168",
   "contractSource": "contracts/DataProofMarket.py",
   "productionUrl": "https://dataproof-market.vercel.app",
-  "explorerUrl": "https://explorer-studio.genlayer.com/address/0x4AD7AaDf9e75563702B849866f55b524dA7420c1"
+  "explorerUrl": "https://explorer-studio.genlayer.com/address/0x6e2F654E69562129aC62ea0a0289CAf960e6b168"
 }

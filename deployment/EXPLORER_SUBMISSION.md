@@ -14,40 +14,43 @@ Data Marketplaces
 
 ## One-liner
 
-A funded dataset marketplace where GenLayer evaluates immutable evidence and settles escrow by consensus.
+A sealed dataset tournament that verifies immutable evidence, ranks qualified providers by consensus, and settles escrow on-chain.
 
 ## Description
 
-DataProof Market lets a buyer lock real GEN behind a dataset request and a
-fixed partial-payout policy. A provider submits content-addressed manifest,
-sample, and license evidence. GenLayer validators independently assess semantic
-fitness, documentation, provenance risk, leakage risk, and license
-compatibility, then agree on ACCEPT, PARTIAL, REJECT, or UNAVAILABLE.
-Deterministic contract logic maps that bounded verdict to the locked payout,
-prevents replay, conserves escrow, and provides a two-party recovery path when
-evidence cannot be safely evaluated.
+DataProof Market lets a buyer fund a sealed tournament for two to five dataset
+providers. Providers post liveness bonds, commit hidden submissions, then reveal
+content-addressed evidence. GenLayer first fetches the raw evidence bytes and
+recomputes SHA-256 under `strict_eq`; only eligible reveals enter a blinded
+`prompt_comparative` jury that ranks fitness, provenance, documentation, leakage
+risk, and license compatibility. Deterministic settlement pays the winner,
+refunds valid bonds, penalizes liveness failures, supports recovery, prevents
+replay, and preserves a fully auditable conservation invariant.
 
 ## Exact reviewer path
 
 1. Open <https://dataproof-market.vercel.app> and confirm the header shows Studionet.
-2. Open an existing bounty from the market directory; no wallet is required for read-only verification.
-3. Open `/contract`, click **Read live state**, and confirm the canonical contract responds.
-4. Follow **Open Explorer** and verify `0x4AD7AaDf9e75563702B849866f55b524dA7420c1`.
-5. For a funded test, connect a buyer wallet, open **Fund request**, enter a provider wallet, immutable rubric URL/digest, escrow, and partial reward, then submit **Open funded request**.
-6. Connect the named provider wallet, open the new bounty, lock manifest/sample evidence, then attach the license snapshot.
-7. Either named party runs the GenLayer jury. After `RULING_READY`, execute the verdict.
-8. Reload the bounty and verify its terminal state, transaction link, provider payout/buyer refund, and conserved aggregate totals.
+2. Open an existing tournament from the market directory; no wallet is required for read-only verification.
+3. Open `/contract`, click **Read live state**, and confirm two tournaments, four submissions, and the canonical contract.
+4. Follow **Open Explorer** and verify `0x6e2F654E69562129aC62ea0a0289CAf960e6b168`.
+5. For a funded test, connect a buyer wallet and open a tournament with 2–5 invited providers, a prize, reveal bonds, and explicit deadlines.
+6. Each provider connects, posts its bond, and commits a salted evidence digest before the commit deadline.
+7. Start reveal, reveal the URL/digest/salt, and close the phase after every provider reveals or the deadline passes.
+8. Run the comparative jury, settle the terminal result, and let each participant withdraw its credited balance.
+9. Reload the tournament and verify the ranking or no-winner reason, Explorer transactions, and conserved aggregate totals.
 
 ## Expected verification outcome
 
-The reviewer can read the canonical Studionet state without a wallet, inspect
-the existing funded lifecycle, and follow every transaction in Explorer. A new
-two-wallet run progresses through funded request, evidence lock, semantic jury,
-and exactly-once settlement. The final provider payout plus buyer refund equals
-the original escrow, and active escrow decreases by the settled amount.
+The reviewer can read the canonical Studionet state without a wallet and follow
+two complete funded lifecycles in Explorer. Tournament 0 proves that byte-valid
+but semantically irrelevant evidence is rejected with no winner. Tournament 1
+proves that two eligible providers can be ranked and the winner paid. The final
+state reports 2,400 received, 2,400 withdrawn, and zero remaining liabilities.
 
 ## Links
 
 - Live app: <https://dataproof-market.vercel.app>
 - GitHub: <https://github.com/eaglebooth/DataProof-Market>
-- Explorer: <https://explorer-studio.genlayer.com/address/0x4AD7AaDf9e75563702B849866f55b524dA7420c1>
+- Explorer: <https://explorer-studio.genlayer.com/address/0x6e2F654E69562129aC62ea0a0289CAf960e6b168>
+- Immutable v2 comparison: <https://github.com/eaglebooth/DataProof-Market/compare/0797299...2fa6a37>
+- Studionet transaction evidence: <https://github.com/eaglebooth/DataProof-Market/blob/main/docs/release-evidence.md>

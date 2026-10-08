@@ -3,7 +3,7 @@
 ## Immutable comparison base
 
 - Baseline: [`0797299`](https://github.com/eaglebooth/DataProof-Market/commit/0797299)
-- Milestone comparison: replace `DEPLOY_COMMIT` after the deploy-candidate commit is pushed.
+- Core milestone comparison: [`0797299...2fa6a37`](https://github.com/eaglebooth/DataProof-Market/compare/0797299...2fa6a37)
 
 ## Material upgrade
 
@@ -15,8 +15,8 @@ submissions and lets the jury compare candidates under the same sealed rules.
 
 ## Consensus boundary
 
-1. `strict_eq` verifies canonical rendered text against all committed SHA-256
-   digests. A fetch outage is `UNAVAILABLE`, not fraud.
+1. `strict_eq` verifies raw immutable bytes from `web.get` against committed
+   SHA-256 digests; `web.render` is used only for semantic input.
 2. Only packets with exact digest matches become eligible.
 3. `prompt_comparative` ranks the eligible IDs against the locked rubric.
 4. The contract rejects invented winner IDs. AI never proposes an amount.
@@ -38,10 +38,11 @@ submissions and lets the jury compare candidates under the same sealed rules.
 
 ## Evidence gate
 
-- Local production-source harness: 25 tests passing.
-- Frontend lint and production build must pass before deployment.
-- The production URL remains pinned to verified v1 until the v2 Studionet
-  address completes the three-wallet funded lifecycle.
-- Pending: deploy `contracts/DataProofMarket.py`, update the canonical address,
-  run `npm run test:live`, then publish the frontend and replace this section
-  with Explorer transaction links.
+- Local suite: 36 tests passing; frontend lint and production build pass.
+- Canonical Studionet contract: [`0x6e2F...b168`](https://explorer-studio.genlayer.com/address/0x6e2F654E69562129aC62ea0a0289CAf960e6b168).
+- Tournament `0`: two eligible packets, semantic `NO_QUALIFIED_DATASET`, exact
+  buyer/provider refunds, all credits withdrawn.
+- Tournament `1`: `RANKED`, winner submission `2`, runner-up `3`; winner withdrew
+  `1100 wei` and runner-up withdrew `100 wei`.
+- Final invariant: `total_received = total_withdrawn = 2400`, with zero active
+  prizes, active bonds, or withdrawable credits.

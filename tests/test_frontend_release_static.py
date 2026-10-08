@@ -11,7 +11,7 @@ LAYOUT = (ROOT / "frontend" / "src" / "app" / "layout.tsx").read_text(encoding="
 
 class FrontendReleaseStaticTests(unittest.TestCase):
     def test_canonical_contract_is_built_in(self):
-        self.assertIn("0x4AD7AaDf9e75563702B849866f55b524dA7420c1", GENLAYER)
+        self.assertIn("0x6e2F654E69562129aC62ea0a0289CAf960e6b168", GENLAYER)
         self.assertIn("canonicalContractAddress", GENLAYER)
         self.assertNotIn("NEXT_PUBLIC_CONTRACT_ADDRESS", GENLAYER)
         self.assertNotIn("NEXT_PUBLIC_NETWORK", GENLAYER)

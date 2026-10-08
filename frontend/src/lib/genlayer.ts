@@ -14,7 +14,7 @@ declare global {
 
 const network: NetworkName = "studionet";
 const endpoint = process.env.NEXT_PUBLIC_GENLAYER_RPC;
-export const canonicalContractAddress = "0x4AD7AaDf9e75563702B849866f55b524dA7420c1";
+export const canonicalContractAddress = "0x6e2F654E69562129aC62ea0a0289CAf960e6b168";
 const readClient = createClient({
   chain: studionet,
   ...(endpoint ? { endpoint } : {}),

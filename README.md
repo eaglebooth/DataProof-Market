@@ -1,9 +1,7 @@
 # DataProof Market
 
-> **v2 deploy candidate:** the repository contract now implements sealed,
-> multi-provider dataset tournaments. The production URL and current Studionet
-> address remain on verified v1 until the new storage/ABI is redeployed and its
-> funded lifecycle is proven.
+> **v2 verified release:** sealed multi-provider dataset tournaments are live on
+> Studionet with funded `NO_QUALIFIED_DATASET` and `RANKED` lifecycle proofs.
 
 DataProof Market is a GenLayer-native funded marketplace for procuring useful,
 well-documented, license-compatible datasets. Buyers lock real GEN against an
@@ -47,10 +45,10 @@ only no-reveal forfeits a bond.
 ## Current status
 
 `SUBMISSION_READY`. Contract
-`0x4AD7AaDf9e75563702B849866f55b524dA7420c1` passed the two-wallet funded
-lifecycle and adversarial runtime checks. The production frontend is live at
-<https://dataproof-market.vercel.app> and was verified against the same
-Studionet deployment.
+`0x6e2F654E69562129aC62ea0a0289CAf960e6b168` passed two funded three-wallet
+tournaments, including semantic rejection, ranked winner payout, bond returns,
+pull withdrawals, and custody conservation. The production frontend is live at
+<https://dataproof-market.vercel.app>.
 
 ## Local verification
 
@@ -72,7 +70,7 @@ Studionet RPC endpoint is required.
 Production app: <https://dataproof-market.vercel.app>
 
 Contract Explorer:
-<https://explorer-studio.genlayer.com/address/0x4AD7AaDf9e75563702B849866f55b524dA7420c1>
+<https://explorer-studio.genlayer.com/address/0x6e2F654E69562129aC62ea0a0289CAf960e6b168>
 
 ## Live verification after deployment
 
