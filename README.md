@@ -8,7 +8,7 @@
 DataProof Market is a GenLayer-native funded marketplace for procuring useful,
 well-documented, license-compatible datasets. Buyers lock real GEN against an
 immutable rubric; providers submit immutable dataset evidence; a neutral on-chain
-AI jury ranks only digest-verified candidates while the contract deterministically
+AI jury ranks only byte-exact digest-verified candidates while the contract deterministically
 assigns the fixed prize and provider bonds.
 
 ## Why GenLayer

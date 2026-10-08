@@ -41,6 +41,7 @@ export async function write(client, address, functionName, args = [], value = 0n
   };
   assert(["ACCEPTED", "FINALIZED"].includes(result.status), `${functionName} did not reach a terminal accepted state`, result);
   assert(["SUCCESS", "SUCCEEDED", "ACCEPTED", "NOT_EXPOSED_BY_SDK"].includes(result.execution), `${functionName} execution failed`, result);
+  await new Promise((resolve) => setTimeout(resolve, Number(process.env.RPC_COOLDOWN_MS || "65000")));
   return result;
 }
 

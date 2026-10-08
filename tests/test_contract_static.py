@@ -13,7 +13,8 @@ class ContractStaticTests(unittest.TestCase):
     def test_two_consensus_modes_have_separate_jobs(self):
         self.assertIn("gl.eq_principle.strict_eq(verify)", SOURCE)
         self.assertIn("gl.eq_principle.prompt_comparative(evaluate, principle)", SOURCE)
-        self.assertIn("hashlib.sha256", SOURCE)
+        self.assertIn("gl.nondet.web.get", SOURCE)
+        self.assertIn("hashlib.sha256(body)", SOURCE)
 
     def test_real_custody_uses_pull_payments_and_cei(self):
         self.assertIn("@gl.public.write.payable", SOURCE)

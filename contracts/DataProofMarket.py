@@ -174,9 +174,9 @@ class DataProofMarket(gl.Contract):
             def verify() -> str:
                 try:
                     for i in range(3):
-                        body = gl.nondet.web.render(urls[i], mode="text").strip()
+                        body = gl.nondet.web.get(urls[i]).body
                         if len(body) < 80: return "UNAVAILABLE"
-                        if "sha256:" + hashlib.sha256(body.encode()).hexdigest() != digests[i]: return "INVALID"
+                        if "sha256:" + hashlib.sha256(body).hexdigest() != digests[i]: return "INVALID"
                     return "VALID"
                 except Exception: return "UNAVAILABLE"
             try: verification = str(gl.eq_principle.strict_eq(verify)).strip().upper()
@@ -191,8 +191,9 @@ class DataProofMarket(gl.Contract):
         rubric_url, rubric_digest = t["rubric_url"], t["rubric_digest"]
         def evaluate() -> str:
             try:
+                rubric_bytes = gl.nondet.web.get(rubric_url).body
+                if "sha256:" + hashlib.sha256(rubric_bytes).hexdigest() != rubric_digest: return '{"outcome":"UNAVAILABLE","winner_id":-1,"runner_up_id":-1,"reason":"Rubric mismatch"}'
                 rubric = gl.nondet.web.render(rubric_url, mode="text").strip()
-                if "sha256:" + hashlib.sha256(rubric.encode()).hexdigest() != rubric_digest: return '{"outcome":"UNAVAILABLE","winner_id":-1,"runner_up_id":-1,"reason":"Rubric mismatch"}'
                 blocks = []
                 for s in packets:
                     parts = [gl.nondet.web.render(s[k], mode="text").strip()[:2600] for k in ("manifest_url", "sample_url", "license_url")]

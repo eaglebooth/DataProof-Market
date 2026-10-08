@@ -4,6 +4,8 @@
 
 - Added sealed multi-provider dataset tournaments with bonded commit/reveal.
 - Added exact packet digest consensus before comparative semantic ranking.
+- Separated raw-byte `web.get` integrity checks from `web.render` semantic input
+  after Studionet proved rendered JSON is not byte-identical to its source.
 - Added bounded candidate storage, hallucinated-winner rejection, deterministic
   prize/bond accounting, no-reveal forfeiture, and CEI-safe pull withdrawals.
 - Added exhaustive lifecycle-model coverage for every 2–5 provider reveal outcome.

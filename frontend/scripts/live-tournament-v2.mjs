@@ -33,7 +33,7 @@ async function waitUntil(timestamp) {
 }
 
 let tournament = JSON.parse(await read(buyerClient, address, "get_tournament", [tournamentId]));
-await waitUntil(Number(tournament.commit_deadline));
+await waitUntil(Number(tournament.commit_deadline) + 5);
 print({ step: "start_reveal", transaction: await write(buyerClient, address, "start_reveal", [tournamentId]) });
 
 for (const [client, suffix] of [[aClient, "A"], [bClient, "B"]]) {
@@ -42,7 +42,7 @@ for (const [client, suffix] of [[aClient, "A"], [bClient, "B"]]) {
 }
 
 tournament = JSON.parse(await read(buyerClient, address, "get_tournament", [tournamentId]));
-await waitUntil(Number(tournament.reveal_deadline));
+await waitUntil(Number(tournament.reveal_deadline) + 5);
 print({ step: "close_reveal", transaction: await write(buyerClient, address, "close_reveal", [tournamentId]) });
 print({ step: "judge", transaction: await write(buyerClient, address, "judge_tournament", [tournamentId]) });
 tournament = JSON.parse(await read(buyerClient, address, "get_tournament", [tournamentId]));

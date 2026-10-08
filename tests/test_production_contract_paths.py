@@ -43,9 +43,14 @@ class RenderStore:
             raise RuntimeError("network unavailable")
         return self.bodies[url]
 
+    def get(self, url):
+        if url in self.unavailable:
+            raise RuntimeError("network unavailable")
+        return types.SimpleNamespace(body=self.bodies[url].encode())
+
 
 def digest(body):
-    return "sha256:" + hashlib.sha256(body.strip().encode()).hexdigest()
+    return "sha256:" + hashlib.sha256(body.encode()).hexdigest()
 
 
 def immutable_url(marker):
